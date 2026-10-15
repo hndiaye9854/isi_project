@@ -19,9 +19,12 @@ umask 077
 ANCIEN_TAG=$( [ -f .env ] && sed -n 's/^IMAGE_TAG=//p' .env || true )
 if [ -f .env.new ]; then
   mv -f .env.new .env
+  echo ">> .env du pipeline appliqué"
 elif [ ! -f .env ]; then
   echo "!! Aucun $DIR/.env : lancer le workflow Deploy depuis GitHub." >&2
   exit 1
+else
+  echo ">> Aucun .env.new : le .env existant est réutilisé"
 fi
 chmod 600 .env
 

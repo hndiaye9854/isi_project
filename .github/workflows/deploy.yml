@@ -149,6 +149,9 @@ jobs:
             "$CIBLE:$DEPLOY_PATH/infra/"
           scp "${SSH_OPTS[@]}" -P "${VPS_SSH_PORT:-22}" scripts/deploy/deploy.sh \
             "$CIBLE:$DEPLOY_PATH/scripts/deploy.sh"
+          scp "${SSH_OPTS[@]}" -P "${VPS_SSH_PORT:-22}" "$RUNNER_TEMP/surfwear.env" \
+            "$CIBLE:$DEPLOY_PATH/.env.new"
+          rm -f "$RUNNER_TEMP/surfwear.env"
 
       # Échoue si un service n'est pas « healthy » ou si la passerelle ne répond pas sur 127.0.0.1.
       - name: Déploie (pull, up, health)
