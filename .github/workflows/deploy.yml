@@ -1,0 +1,114 @@
+# Pipeline de PRODUCTION : CI → images Docker (DockerHub) → déploiement SSH sur le VPS.
+#
+# Rôles : ce pipeline livre des CONTENEURS, publiés sur 127.0.0.1 du VPS (passerelle :8201, ERP :8202,
+# boutiques :7001-7003, mailpit :8025). L'edge — nginx de l'hôte, certificat Let's Encrypt,
+# HTTP→HTTPS — reste configuré sur le VPS.
+#
+# Secrets du dépôt : DOCKERHUB_USERNAME, DOCKERHUB_PASSWORD (jeton d'accès DockerHub de préférence),
+#   VPS_HOST, VPS_USER, VPS_SSH_KEY (clé privée), VPS_SSH_PORT (22 si vide).
+# Variable facultative (Settings > Variables) : VPS_DEPLOY_PATH (défaut : surfwear, relatif au $HOME).
+# Le .env de production vit sur le VPS (créé au premier déploiement par scripts/deploy/deploy.sh).
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Jamais deux déploiements simultanés ; un déploiement en cours n'est pas interrompu.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  build-and-push:
+    name: Image ${{ matrix.image }} → DockerHub
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { image: gateway, path: services/gateway }
+          - { image: catalogue, path: services/catalogue }
+          - { image: commandes, path: services/commandes }
+          - { image: notifications, path: services/notifications }
+          - { image: analytics, path: services/analytics }
+          - { image: erp-connector, path: services/erp-connector }
+          - { image: erp-mock, path: services/erp-mock }
+          - { image: boutique-simulator, path: simulators/boutique }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          build-args: SERVICE_PATH=${{ matrix.path }}
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/surfwear-${{ matrix.image }}:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/surfwear-${{ matrix.image }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max
+
+  deploy:
+    name: Déploiement sur le VPS
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+      DEPLOY_PATH: ${{ vars.VPS_DEPLOY_PATH || 'surfwear' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prépare la connexion SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${VPS_SSH_PORT:-22}" "$VPS_HOST" > ~/.ssh/known_hosts 2>/dev/null
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Copie compose, configuration et scripts sur le VPS
+        run: |
+          SSH_OPTS=(-i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes)
+          CIBLE="$VPS_USER@$VPS_HOST"
+          ssh "${SSH_OPTS[@]}" -p "${VPS_SSH_PORT:-22}" "$CIBLE" \
+            "mkdir -p $DEPLOY_PATH/scripts $DEPLOY_PATH/infra"
+          scp "${SSH_OPTS[@]}" -P "${VPS_SSH_PORT:-22}" docker-compose.prod.yml \
+            "$CIBLE:$DEPLOY_PATH/docker-compose.prod.yml"
+          scp "${SSH_OPTS[@]}" -P "${VPS_SSH_PORT:-22}" -r infra/postgres infra/prometheus infra/grafana \
+            "$CIBLE:$DEPLOY_PATH/infra/"
+          scp "${SSH_OPTS[@]}" -P "${VPS_SSH_PORT:-22}" scripts/deploy/deploy.sh \
+            "$CIBLE:$DEPLOY_PATH/scripts/deploy.sh"
+
+      # Échoue si un service n'est pas « healthy » ou si la passerelle ne répond pas sur 127.0.0.1.
+      - name: Déploie (pull, up, health)
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes -p "${VPS_SSH_PORT:-22}" \
+            "$VPS_USER@$VPS_HOST" \
+            "chmod 700 $DEPLOY_PATH/scripts/deploy.sh && $DEPLOY_PATH/scripts/deploy.sh $DOCKERHUB_USERNAME ${{ github.sha }}"
+
+      - name: Nettoie la clé SSH
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
