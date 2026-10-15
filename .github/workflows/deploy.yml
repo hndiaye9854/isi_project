@@ -2,12 +2,17 @@
 #
 # Rôles : ce pipeline livre des CONTENEURS, publiés sur 127.0.0.1 du VPS (passerelle :8201, ERP :8202,
 # boutiques :7001-7003, mailpit :8025). L'edge — nginx de l'hôte, certificat Let's Encrypt,
-# HTTP→HTTPS — reste configuré sur le VPS.
+# HTTP→HTTPS — reste configuré sur le VPS : https://isi.hamidnd.me et https://isi-erp.hamidnd.me.
 #
-# Secrets du dépôt : DOCKERHUB_USERNAME, DOCKERHUB_PASSWORD (jeton d'accès DockerHub de préférence),
-#   VPS_HOST, VPS_USER, VPS_SSH_KEY (clé privée), VPS_SSH_PORT (22 si vide).
-# Variable facultative (Settings > Variables) : VPS_DEPLOY_PATH (défaut : surfwear, relatif au $HOME).
-# Le .env de production vit sur le VPS (créé au premier déploiement par scripts/deploy/deploy.sh).
+# Secrets du dépôt :
+#   DockerHub : DOCKERHUB_USERNAME, DOCKERHUB_PASSWORD (jeton d'accès de préférence)
+#   VPS       : VPS_HOST, VPS_USER, VPS_SSH_KEY (clé privée), VPS_SSH_PORT (22 si vide)
+#   Infra     : POSTGRES_PASSWORD, RABBITMQ_USER, RABBITMQ_PASSWORD
+#   Auth0     : AUTH_MODE, AUTH0_DOMAIN, AUTH0_AUDIENCE, AUTH0_CLAIM_NAMESPACE, AUTH0_CLIENT_BOUTIQUES,
+#               AUTH0_B00{1,2,3}_CLIENT_ID / _CLIENT_SECRET
+# Variables facultatives (Settings > Variables) : VPS_DEPLOY_PATH (défaut : surfwear, relatif au $HOME),
+#   PUBLIC_API_URL, PUBLIC_ERP_URL (contrôle final via le domaine public).
+# Le .env de production est généré ici à partir des secrets, puis copié sur le VPS en 600.
 name: Deploy
 
 on:
@@ -69,7 +74,9 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: production
+    environment:
+      name: production
+      url: ${{ vars.PUBLIC_API_URL || 'https://isi.hamidnd.me' }}
     env:
       VPS_HOST: ${{ secrets.VPS_HOST }}
       VPS_USER: ${{ secrets.VPS_USER }}
@@ -86,6 +93,49 @@ jobs:
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -p "${VPS_SSH_PORT:-22}" "$VPS_HOST" > ~/.ssh/known_hosts 2>/dev/null
           chmod 600 ~/.ssh/known_hosts
+
+      # Valeurs entre apostrophes : docker compose les lit telles quelles (pas d'interpolation de « $ »).
+      - name: Génère le .env de production
+        env:
+          AUTH_MODE: ${{ secrets.AUTH_MODE }}
+          AUTH0_DOMAIN: ${{ secrets.AUTH0_DOMAIN }}
+          AUTH0_AUDIENCE: ${{ secrets.AUTH0_AUDIENCE }}
+          AUTH0_CLAIM_NAMESPACE: ${{ secrets.AUTH0_CLAIM_NAMESPACE }}
+          AUTH0_CLIENT_BOUTIQUES: ${{ secrets.AUTH0_CLIENT_BOUTIQUES }}
+          AUTH0_B001_CLIENT_ID: ${{ secrets.AUTH0_B001_CLIENT_ID }}
+          AUTH0_B001_CLIENT_SECRET: ${{ secrets.AUTH0_B001_CLIENT_SECRET }}
+          AUTH0_B002_CLIENT_ID: ${{ secrets.AUTH0_B002_CLIENT_ID }}
+          AUTH0_B002_CLIENT_SECRET: ${{ secrets.AUTH0_B002_CLIENT_SECRET }}
+          AUTH0_B003_CLIENT_ID: ${{ secrets.AUTH0_B003_CLIENT_ID }}
+          AUTH0_B003_CLIENT_SECRET: ${{ secrets.AUTH0_B003_CLIENT_SECRET }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          RABBITMQ_USER: ${{ secrets.RABBITMQ_USER }}
+          RABBITMQ_PASSWORD: ${{ secrets.RABBITMQ_PASSWORD }}
+        run: |
+          umask 077
+          vars=(AUTH_MODE AUTH0_DOMAIN AUTH0_AUDIENCE AUTH0_CLAIM_NAMESPACE AUTH0_CLIENT_BOUTIQUES
+                AUTH0_B001_CLIENT_ID AUTH0_B001_CLIENT_SECRET AUTH0_B002_CLIENT_ID AUTH0_B002_CLIENT_SECRET
+                AUTH0_B003_CLIENT_ID AUTH0_B003_CLIENT_SECRET POSTGRES_PASSWORD RABBITMQ_USER RABBITMQ_PASSWORD)
+          requis=(AUTH_MODE POSTGRES_PASSWORD RABBITMQ_USER RABBITMQ_PASSWORD)
+          if [ "$AUTH_MODE" = auth0 ]; then
+            requis+=(AUTH0_DOMAIN AUTH0_AUDIENCE AUTH0_B001_CLIENT_ID AUTH0_B001_CLIENT_SECRET
+                     AUTH0_B002_CLIENT_ID AUTH0_B002_CLIENT_SECRET AUTH0_B003_CLIENT_ID AUTH0_B003_CLIENT_SECRET)
+            case "$AUTH0_DOMAIN" in http*|*/) echo "::error::AUTH0_DOMAIN doit être sans https:// ni / final"; exit 1;; esac
+          fi
+          for v in "${requis[@]}"; do
+            [ -n "${!v}" ] || { echo "::error::Secret manquant : $v"; exit 1; }
+          done
+          # Insérés dans des URL (postgres://…, amqp://…) : caractères sûrs uniquement.
+          for v in POSTGRES_PASSWORD RABBITMQ_USER RABBITMQ_PASSWORD; do
+            [[ "${!v}" =~ ^[A-Za-z0-9._~-]+$ ]] || { echo "::error::$v : lettres, chiffres et . _ ~ - uniquement"; exit 1; }
+          done
+          f="$RUNNER_TEMP/surfwear.env"
+          : > "$f"
+          for v in "${vars[@]}"; do
+            case "${!v}" in *"'"*|*$'\n'*) echo "::error::$v ne doit contenir ni apostrophe ni retour à la ligne"; exit 1;; esac
+            printf "%s='%s'\n" "$v" "${!v}" >> "$f"
+          done
+          printf '%s\n' TRUST_PROXY=2 GATEWAY_PORT=8201 ERP_PORT=8202 >> "$f"
 
       - name: Copie compose, configuration et scripts sur le VPS
         run: |
@@ -108,6 +158,21 @@ jobs:
           ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes -p "${VPS_SSH_PORT:-22}" \
             "$VPS_USER@$VPS_HOST" \
             "chmod 700 $DEPLOY_PATH/scripts/deploy.sh && $DEPLOY_PATH/scripts/deploy.sh $DOCKERHUB_USERNAME ${{ github.sha }}"
+
+      # Contrôle de bout en bout via nginx/HTTPS : santé, et en mode auth0 refus des jetons de démo.
+      - name: Vérifie les domaines publics
+        env:
+          API_URL: ${{ vars.PUBLIC_API_URL || 'https://isi.hamidnd.me' }}
+          ERP_URL: ${{ vars.PUBLIC_ERP_URL || 'https://isi-erp.hamidnd.me' }}
+          AUTH_MODE: ${{ secrets.AUTH_MODE }}
+        run: |
+          curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "$API_URL/health" > /dev/null
+          curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "$ERP_URL/health" > /dev/null
+          if [ "$AUTH_MODE" = auth0 ]; then
+            code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer dev-B001' "$API_URL/api/v1/produits")
+            [ "$code" = 401 ] || { echo "::error::Jeton de démo accepté en production (HTTP $code)"; exit 1; }
+          fi
+          echo "API : $API_URL — ERP : $ERP_URL — OK"
 
       - name: Nettoie la clé SSH
         if: always()

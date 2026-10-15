@@ -14,6 +14,9 @@ import { authentification, exiger } from './auth.js';
 const SERVICE = 'gateway';
 const logger = createLogger(SERVICE);
 const app = createApp({ service: SERVICE, logger });
+// Derrière un reverse proxy (nginx), nombre de proxys de confiance : le quota s'applique à l'IP réelle du client.
+const proxysDeConfiance = envInt('TRUST_PROXY', 0);
+if (proxysDeConfiance > 0) app.set('trust proxy', proxysDeConfiance);
 
 const openapiPath = env('OPENAPI_PATH', fileURLToPath(new URL('../../../docs/openapi.yaml', import.meta.url)));
 const openapi = YAML.parse(readFileSync(openapiPath, 'utf8'));
