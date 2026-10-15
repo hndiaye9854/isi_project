@@ -22,6 +22,11 @@ const openapiPath = env('OPENAPI_PATH', fileURLToPath(new URL('../../../docs/ope
 const openapi = YAML.parse(readFileSync(openapiPath, 'utf8'));
 app.get('/', (_req, res) => res.redirect('/docs'));
 app.get('/openapi.json', (_req, res) => res.json(openapi));
+// La page et le script d'initialisation embarquent le contrat OpenAPI : jamais mis en cache (Cloudflare, navigateur).
+app.use('/docs', (req, res, next) => {
+  if (req.path === '/' || req.path.endsWith('swagger-ui-init.js')) res.set('Cache-Control', 'no-store');
+  next();
+});
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(openapi, { customSiteTitle: 'API Surfwear B2B' }));
 
 app.use('/api', rateLimit({
