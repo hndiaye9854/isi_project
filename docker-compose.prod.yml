@@ -209,15 +209,15 @@ services:
       AUTH0_CLIENT_SECRET: ${AUTH0_B002_CLIENT_SECRET:-}
     ports: ["127.0.0.1:${BOUTIQUE_2_PORT:-7002}:7000"]
 
-  boutique-lacanau:
+  boutique-bayonne:
     <<: *boutique
     environment:
       <<: *auth-env
       PORT: 7000
       GATEWAY_URL: http://gateway:8080
       BOUTIQUE_ID: B003
-      BOUTIQUE_NOM: Surf Shop Lacanau
-      PUBLIC_URL: http://boutique-lacanau:7000
+      BOUTIQUE_NOM: Surf Shop Bayonne
+      PUBLIC_URL: http://boutique-bayonne:7000
       AUTH0_CLIENT_ID: ${AUTH0_B003_CLIENT_ID:-}
       AUTH0_CLIENT_SECRET: ${AUTH0_B003_CLIENT_SECRET:-}
     ports: ["127.0.0.1:${BOUTIQUE_3_PORT:-7003}:7000"]
@@ -238,7 +238,7 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-surfwear}
     volumes: [./infra/grafana/provisioning:/etc/grafana/provisioning:ro]
-    ports: ["127.0.0.1:${GRAFANA_PORT:-3000}:3000"]
+    ports: ["127.0.0.1:${GRAFANA_PORT:-3010}:3000"]
     networks: [plateforme]
 
 networks:
