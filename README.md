@@ -296,19 +296,32 @@ Chaque service lit sa configuration dans des variables d'environnement, avec des
 
 ## 12. Déploiement sur le VPS
 
+En production : API et documentation sur **https://isi.hamidnd.me** (`/docs`), écran du logisticien sur **https://isi-erp.hamidnd.me/logistique/**.
+
 Chaque *push* sur `main` (ou un lancement manuel dans l'onglet *Actions*) exécute `.github/workflows/deploy.yml` :
 
 1. la CI (tests unitaires et test de bout en bout) ;
 2. la construction des 8 images, poussées sur DockerHub sous `<DOCKERHUB_USERNAME>/surfwear-<service>`, avec les tags `latest` et le SHA du commit ;
-3. la copie de `docker-compose.prod.yml`, `infra/` et `scripts/deploy/deploy.sh` sur le VPS, puis l'exécution de ce script en SSH (`pull`, `up --wait`, contrôle de `/health`).
+3. la génération du `.env` de production à partir des secrets GitHub, puis sa copie sur le VPS (droits 600) avec `docker-compose.prod.yml`, `infra/` et `scripts/deploy/deploy.sh` ;
+4. l'exécution de ce script en SSH : `pull`, alignement des mots de passe Postgres et RabbitMQ, `up --wait`, contrôle de `/health` ;
+5. un contrôle via les domaines publics : santé de l'API et de l'ERP et, en mode `auth0`, refus des jetons de démonstration.
 
-**Secrets GitHub** (*Settings > Secrets and variables > Actions*) : `DOCKERHUB_USERNAME`, `DOCKERHUB_PASSWORD` (jeton d'accès DockerHub), `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` (clé privée dont la clé publique est dans `~/.ssh/authorized_keys` du VPS), `VPS_SSH_PORT`. Variable facultative : `VPS_DEPLOY_PATH` (par défaut `~/surfwear`).
+**Secrets GitHub** (*Settings > Secrets and variables > Actions*) :
+
+| Groupe | Secrets |
+| --- | --- |
+| DockerHub | `DOCKERHUB_USERNAME`, `DOCKERHUB_PASSWORD` (jeton d'accès) |
+| VPS | `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` (clé privée, clé publique dans `~/.ssh/authorized_keys`), `VPS_SSH_PORT` |
+| Infrastructure | `POSTGRES_PASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD` (lettres, chiffres et `. _ ~ -` uniquement : ils sont insérés dans des URL) |
+| Auth0 | `AUTH_MODE` (`auth0`), `AUTH0_DOMAIN` (sans `https://`), `AUTH0_AUDIENCE`, `AUTH0_CLAIM_NAMESPACE`, `AUTH0_CLIENT_BOUTIQUES`, `AUTH0_B001_CLIENT_ID` / `_CLIENT_SECRET` (idem B002, B003) |
+
+Variables facultatives : `VPS_DEPLOY_PATH` (par défaut `~/surfwear`), `PUBLIC_API_URL` et `PUBLIC_ERP_URL` (par défaut les domaines ci-dessus).
 
 **Prérequis sur le VPS** : Docker et Docker Compose v2, et l'utilisateur `VPS_USER` membre du groupe `docker`. Les dépôts DockerHub créés au premier *push* sont publics ; s'ils sont privés, faire une fois `docker login` sur le VPS.
 
-**Configuration** : le fichier `~/surfwear/.env` du VPS n'est jamais écrasé. Au premier déploiement, il est créé avec des mots de passe aléatoires et `AUTH_MODE=dev`. Pour la vraie production, y passer `AUTH_MODE=auth0` et renseigner les variables `AUTH0_*` (section 5), puis relancer le workflow.
+**Configuration** : les secrets GitHub sont la seule source de vérité. Le `.env` du VPS est régénéré à chaque déploiement : une modification faite à la main sur le VPS est perdue au déploiement suivant. Pour changer une valeur, modifier le secret puis relancer le workflow.
 
-**Exposition** : les conteneurs n'écoutent que sur `127.0.0.1` (passerelle `8201`, ERP `8202`, boutiques `7001` à `7003`, mailpit `8025`, console RabbitMQ `15672`). Le nginx de l'hôte fait le reverse proxy en HTTPS, par exemple :
+**Exposition** : les conteneurs n'écoutent que sur `127.0.0.1` (passerelle `8201`, ERP `8202`, boutiques `7001` à `7003`, mailpit `8025`, console RabbitMQ `15672`). Cloudflare puis le nginx de l'hôte font le reverse proxy en HTTPS (d'où `TRUST_PROXY=2` pour la passerelle, afin que le quota s'applique à l'IP réelle du client), par exemple :
 
 ```nginx
 location / {

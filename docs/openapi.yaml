@@ -12,6 +12,10 @@ info:
   contact:
     name: Projet fil rouge, M2 SIGLIS, UPPA
 servers:
+  - url: /
+    description: Serveur qui affiche cette documentation
+  - url: https://isi.hamidnd.me
+    description: Production
   - url: http://localhost:8080
     description: Environnement local (docker compose)
 tags:

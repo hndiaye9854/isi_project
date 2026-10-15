@@ -67,6 +67,7 @@ services:
 
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
+    hostname: rabbitmq   # nom de nœud stable : files et utilisateurs conservés entre deux recréations
     restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?RABBITMQ_USER manquant}
@@ -166,6 +167,7 @@ services:
       OPENAPI_PATH: /app/docs/openapi.yaml
       AUTH0_CLAIM_NAMESPACE: ${AUTH0_CLAIM_NAMESPACE:-https://surfwear.example/}
       AUTH0_CLIENT_BOUTIQUES: ${AUTH0_CLIENT_BOUTIQUES:-}
+      TRUST_PROXY: ${TRUST_PROXY:-2}   # Cloudflare puis nginx devant la passerelle
     depends_on:
       catalogue: { condition: service_healthy }
       commandes: { condition: service_healthy }
