@@ -1,6 +1,6 @@
 # Pipeline de PRODUCTION : CI → images Docker (DockerHub) → déploiement SSH sur le VPS.
 #
-# Rôles : ce pipeline livre des CONTENEURS, publiés sur 127.0.0.1 du VPS (passerelle :8080, ERP :8090,
+# Rôles : ce pipeline livre des CONTENEURS, publiés sur 127.0.0.1 du VPS (passerelle :8201, ERP :8202,
 # boutiques :7001-7003, mailpit :8025). L'edge — nginx de l'hôte, certificat Let's Encrypt,
 # HTTP→HTTPS — reste configuré sur le VPS.
 #

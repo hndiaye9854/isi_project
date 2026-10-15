@@ -98,7 +98,7 @@ services:
       ERP_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/erp
     depends_on:
       postgres: { condition: service_healthy }
-    ports: ["127.0.0.1:${ERP_PORT:-8090}:8090"]   # poste logisticien : /logistique/
+    ports: ["127.0.0.1:${ERP_PORT:-8202}:8090"]   # poste logisticien : /logistique/
     healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8090/health"], interval: 10s, timeout: 3s, retries: 10 }
     networks: [entreprise]
 
@@ -171,7 +171,7 @@ services:
       commandes: { condition: service_healthy }
       notifications: { condition: service_healthy }
       analytics: { condition: service_healthy }
-    ports: ["127.0.0.1:${GATEWAY_PORT:-8080}:8080"]   # API publique + /docs (derrière nginx)
+    ports: ["127.0.0.1:${GATEWAY_PORT:-8201}:8080"]   # API publique + /docs (derrière nginx)
     healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"], interval: 10s, timeout: 3s, retries: 10 }
     networks: [plateforme, boutiques]
 

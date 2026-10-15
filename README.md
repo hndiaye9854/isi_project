@@ -308,11 +308,11 @@ Chaque *push* sur `main` (ou un lancement manuel dans l'onglet *Actions*) exécu
 
 **Configuration** : le fichier `~/surfwear/.env` du VPS n'est jamais écrasé. Au premier déploiement, il est créé avec des mots de passe aléatoires et `AUTH_MODE=dev`. Pour la vraie production, y passer `AUTH_MODE=auth0` et renseigner les variables `AUTH0_*` (section 5), puis relancer le workflow.
 
-**Exposition** : les conteneurs n'écoutent que sur `127.0.0.1` (passerelle `8080`, ERP `8090`, boutiques `7001` à `7003`, mailpit `8025`, console RabbitMQ `15672`). Le nginx de l'hôte fait le reverse proxy en HTTPS, par exemple :
+**Exposition** : les conteneurs n'écoutent que sur `127.0.0.1` (passerelle `8201`, ERP `8202`, boutiques `7001` à `7003`, mailpit `8025`, console RabbitMQ `15672`). Le nginx de l'hôte fait le reverse proxy en HTTPS, par exemple :
 
 ```nginx
 location / {
-    proxy_pass http://127.0.0.1:8080;
+    proxy_pass http://127.0.0.1:8201;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;

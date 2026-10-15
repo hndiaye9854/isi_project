@@ -41,8 +41,8 @@ RABBITMQ_PASSWORD=$(aleatoire)
 GRAFANA_PASSWORD=$(aleatoire)
 
 # Ports locaux (127.0.0.1) à adapter si déjà pris sur le VPS
-GATEWAY_PORT=8080
-ERP_PORT=8090
+GATEWAY_PORT=8201
+ERP_PORT=8202
 BOUTIQUE_1_PORT=7001
 BOUTIQUE_2_PORT=7002
 BOUTIQUE_3_PORT=7003
@@ -78,7 +78,7 @@ if ! "${COMPOSE[@]}" up -d --remove-orphans --wait --wait-timeout 300; then
 fi
 
 # Vérification HTTP de la passerelle, comme le ferait le reverse proxy.
-PORT=$(sed -n 's/^GATEWAY_PORT=//p' .env); PORT=${PORT:-8080}
+PORT=$(sed -n 's/^GATEWAY_PORT=//p' .env); PORT=${PORT:-8201}
 if command -v curl > /dev/null; then curl -fsS "http://127.0.0.1:$PORT/health" > /dev/null
 else wget -qO /dev/null "http://127.0.0.1:$PORT/health"; fi
 echo ">> Passerelle OK sur 127.0.0.1:$PORT"
