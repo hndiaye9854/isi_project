@@ -1,0 +1,250 @@
+# Écosystème de PRODUCTION (VPS) : mêmes services que docker-compose.yml, mais les images sont tirées
+# de DockerHub (construites par .github/workflows/deploy.yml) au lieu d'être construites sur place.
+#
+# Rôles : ce fichier livre des CONTENEURS. Les ports publiés écoutent uniquement sur 127.0.0.1 :
+# l'exposition publique (nginx de l'hôte, certificat Let's Encrypt, HTTP→HTTPS) reste à la charge du VPS.
+#
+# Variables lues dans le .env du VPS (voir scripts/deploy/deploy.sh) :
+#   DOCKERHUB_NAMESPACE, IMAGE_TAG          image à déployer (écrites par le pipeline)
+#   POSTGRES_PASSWORD, RABBITMQ_USER/PASSWORD, AUTH_MODE, AUTH0_*   (comme .env.example)
+#   *_PORT                                   ports locaux, à changer en cas de conflit sur le VPS
+#
+# Commande (sur le VPS, dans le dossier de déploiement) :
+#   docker compose -f docker-compose.prod.yml up -d --wait
+
+name: surfwear-prod
+
+x-node-service: &node-service
+  restart: unless-stopped
+  environment: &common-env
+    LOG_LEVEL: ${LOG_LEVEL:-info}
+    RABBITMQ_URL: amqp://${RABBITMQ_USER:?RABBITMQ_USER manquant}:${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD manquant}@rabbitmq:5672
+    REDIS_URL: redis://redis:6379
+  depends_on: &infra-ready
+    postgres: { condition: service_healthy }
+    rabbitmq: { condition: service_healthy }
+    redis: { condition: service_healthy }
+  networks: [plateforme]
+  logging: &logging
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+x-auth-env: &auth-env
+  AUTH_MODE: ${AUTH_MODE:-auth0}
+  AUTH0_DOMAIN: ${AUTH0_DOMAIN:-}
+  AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:-}
+
+services:
+  # ---------------- Infrastructure ----------------
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+    networks: [plateforme, entreprise]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+    networks: [plateforme]
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?RABBITMQ_USER manquant}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD manquant}
+    ports: ["127.0.0.1:${RABBITMQ_CONSOLE_PORT:-15672}:15672"]   # console du bus (tunnel SSH)
+    volumes: [rabbitmq-data:/var/lib/rabbitmq]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+    logging: *logging
+    networks: [plateforme]
+
+  mailpit:
+    image: axllent/mailpit:v1.21
+    restart: unless-stopped
+    ports: ["127.0.0.1:${MAILPIT_PORT:-8025}:8025"]   # boîte mail de démonstration
+    logging: *logging
+    networks: [plateforme]
+
+  # ---------------- SI de l'entreprise (simulé) ----------------
+  erp-mock:
+    <<: *node-service
+    image: ${DOCKERHUB_NAMESPACE:?DOCKERHUB_NAMESPACE manquant}/surfwear-erp-mock:${IMAGE_TAG:-latest}
+    environment:
+      <<: *common-env
+      PORT: 8090
+      ERP_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/erp
+    depends_on:
+      postgres: { condition: service_healthy }
+    ports: ["127.0.0.1:${ERP_PORT:-8090}:8090"]   # poste logisticien : /logistique/
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8090/health"], interval: 10s, timeout: 3s, retries: 10 }
+    networks: [entreprise]
+
+  # ---------------- Plateforme d'interopérabilité ----------------
+  erp-connector:
+    <<: *node-service
+    image: ${DOCKERHUB_NAMESPACE}/surfwear-erp-connector:${IMAGE_TAG:-latest}
+    environment:
+      <<: *common-env
+      PORT: 8085
+      ERP_URL: http://erp-mock:8090
+    depends_on:
+      <<: *infra-ready
+      erp-mock: { condition: service_healthy }
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8085/health"], interval: 10s, timeout: 3s, retries: 10 }
+    networks: [plateforme, entreprise]   # seul service relié au réseau de l'entreprise
+
+  catalogue:
+    <<: *node-service
+    image: ${DOCKERHUB_NAMESPACE}/surfwear-catalogue:${IMAGE_TAG:-latest}
+    environment:
+      <<: *common-env
+      PORT: 8081
+      ERP_CONNECTOR_URL: http://erp-connector:8085
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8081/health"], interval: 10s, timeout: 3s, retries: 10 }
+
+  commandes:
+    <<: *node-service
+    image: ${DOCKERHUB_NAMESPACE}/surfwear-commandes:${IMAGE_TAG:-latest}
+    environment:
+      <<: *common-env
+      PORT: 8082
+      ERP_CONNECTOR_URL: http://erp-connector:8085
+      COMMANDES_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/commandes
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8082/health"], interval: 10s, timeout: 3s, retries: 10 }
+
+  notifications:
+    <<: *node-service
+    image: ${DOCKERHUB_NAMESPACE}/surfwear-notifications:${IMAGE_TAG:-latest}
+    environment:
+      <<: *common-env
+      PORT: 8083
+      NOTIFICATIONS_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/notifications
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      BOUTIQUE_EMAILS: B001:biarritz@boutiques.test,B002:hossegor@boutiques.test,B003:lacanau@boutiques.test
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8083/health"], interval: 10s, timeout: 3s, retries: 10 }
+    networks: [plateforme, boutiques]    # appelle les webhooks des boutiques
+
+  analytics:
+    <<: *node-service
+    image: ${DOCKERHUB_NAMESPACE}/surfwear-analytics:${IMAGE_TAG:-latest}
+    environment:
+      <<: *common-env
+      PORT: 8084
+      ANALYTICS_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/analytics
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8084/health"], interval: 10s, timeout: 3s, retries: 10 }
+
+  gateway:
+    <<: *node-service
+    image: ${DOCKERHUB_NAMESPACE}/surfwear-gateway:${IMAGE_TAG:-latest}
+    environment:
+      <<: [*common-env, *auth-env]
+      PORT: 8080
+      OPENAPI_PATH: /app/docs/openapi.yaml
+      AUTH0_CLAIM_NAMESPACE: ${AUTH0_CLAIM_NAMESPACE:-https://surfwear.example/}
+      AUTH0_CLIENT_BOUTIQUES: ${AUTH0_CLIENT_BOUTIQUES:-}
+    depends_on:
+      catalogue: { condition: service_healthy }
+      commandes: { condition: service_healthy }
+      notifications: { condition: service_healthy }
+      analytics: { condition: service_healthy }
+    ports: ["127.0.0.1:${GATEWAY_PORT:-8080}:8080"]   # API publique + /docs (derrière nginx)
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"], interval: 10s, timeout: 3s, retries: 10 }
+    networks: [plateforme, boutiques]
+
+  # ---------------- Boutiques clientes (simulées) ----------------
+  boutique-biarritz: &boutique
+    restart: unless-stopped
+    image: ${DOCKERHUB_NAMESPACE}/surfwear-boutique-simulator:${IMAGE_TAG:-latest}
+    environment:
+      <<: *auth-env
+      PORT: 7000
+      GATEWAY_URL: http://gateway:8080
+      BOUTIQUE_ID: B001
+      BOUTIQUE_NOM: Surf Shop Biarritz
+      PUBLIC_URL: http://boutique-biarritz:7000
+      AUTH0_CLIENT_ID: ${AUTH0_B001_CLIENT_ID:-}
+      AUTH0_CLIENT_SECRET: ${AUTH0_B001_CLIENT_SECRET:-}
+    depends_on:
+      gateway: { condition: service_healthy }
+    ports: ["127.0.0.1:${BOUTIQUE_1_PORT:-7001}:7000"]
+    logging: *logging
+    networks: [boutiques]
+
+  boutique-hossegor:
+    <<: *boutique
+    environment:
+      <<: *auth-env
+      PORT: 7000
+      GATEWAY_URL: http://gateway:8080
+      BOUTIQUE_ID: B002
+      BOUTIQUE_NOM: Surf Shop Hossegor
+      PUBLIC_URL: http://boutique-hossegor:7000
+      AUTH0_CLIENT_ID: ${AUTH0_B002_CLIENT_ID:-}
+      AUTH0_CLIENT_SECRET: ${AUTH0_B002_CLIENT_SECRET:-}
+    ports: ["127.0.0.1:${BOUTIQUE_2_PORT:-7002}:7000"]
+
+  boutique-lacanau:
+    <<: *boutique
+    environment:
+      <<: *auth-env
+      PORT: 7000
+      GATEWAY_URL: http://gateway:8080
+      BOUTIQUE_ID: B003
+      BOUTIQUE_NOM: Surf Shop Lacanau
+      PUBLIC_URL: http://boutique-lacanau:7000
+      AUTH0_CLIENT_ID: ${AUTH0_B003_CLIENT_ID:-}
+      AUTH0_CLIENT_SECRET: ${AUTH0_B003_CLIENT_SECRET:-}
+    ports: ["127.0.0.1:${BOUTIQUE_3_PORT:-7003}:7000"]
+
+  # ---------------- Supervision (optionnelle : --profile monitoring) ----------------
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    restart: unless-stopped
+    profiles: [monitoring]
+    volumes: [./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro]
+    ports: ["127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"]
+    networks: [plateforme, entreprise]
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    restart: unless-stopped
+    profiles: [monitoring]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-surfwear}
+    volumes: [./infra/grafana/provisioning:/etc/grafana/provisioning:ro]
+    ports: ["127.0.0.1:${GRAFANA_PORT:-3000}:3000"]
+    networks: [plateforme]
+
+networks:
+  plateforme: {}
+  entreprise: {}
+  boutiques: {}
+
+volumes:
+  postgres-data: {}
+  redis-data: {}
+  rabbitmq-data: {}

@@ -20,6 +20,7 @@ Auteurs : ALLOUCH Salma, NDIAYE Hamidou, FAYE Serigne Saliou HASNAOUI Ilyas. Ens
 9. [Supervision](#9-supervision)
 10. [Développement sans Docker](#10-développement-sans-docker)
 11. [Dépannage](#11-dépannage)
+12. [Déploiement sur le VPS](#12-déploiement-sur-le-vps)
 
 ---
 
@@ -292,3 +293,37 @@ Chaque service lit sa configuration dans des variables d'environnement, avec des
 | Port déjà utilisé | Modifier la partie gauche de `ports:` dans `docker-compose.yml`. |
 | Un service redémarre en boucle avec `PRECONDITION_FAILED` (`x-dead-letter-exchange`) | Les files RabbitMQ ont été créées par une version précédente avec d'autres paramètres. Repartir de zéro (ligne suivante) ou supprimer les files concernées dans la console RabbitMQ. |
 | Repartir de zéro | `docker compose down -v && docker compose up -d --build` |
+
+## 12. Déploiement sur le VPS
+
+Chaque *push* sur `main` (ou un lancement manuel dans l'onglet *Actions*) exécute `.github/workflows/deploy.yml` :
+
+1. la CI (tests unitaires et test de bout en bout) ;
+2. la construction des 8 images, poussées sur DockerHub sous `<DOCKERHUB_USERNAME>/surfwear-<service>`, avec les tags `latest` et le SHA du commit ;
+3. la copie de `docker-compose.prod.yml`, `infra/` et `scripts/deploy/deploy.sh` sur le VPS, puis l'exécution de ce script en SSH (`pull`, `up --wait`, contrôle de `/health`).
+
+**Secrets GitHub** (*Settings > Secrets and variables > Actions*) : `DOCKERHUB_USERNAME`, `DOCKERHUB_PASSWORD` (jeton d'accès DockerHub), `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` (clé privée dont la clé publique est dans `~/.ssh/authorized_keys` du VPS), `VPS_SSH_PORT`. Variable facultative : `VPS_DEPLOY_PATH` (par défaut `~/surfwear`).
+
+**Prérequis sur le VPS** : Docker et Docker Compose v2, et l'utilisateur `VPS_USER` membre du groupe `docker`. Les dépôts DockerHub créés au premier *push* sont publics ; s'ils sont privés, faire une fois `docker login` sur le VPS.
+
+**Configuration** : le fichier `~/surfwear/.env` du VPS n'est jamais écrasé. Au premier déploiement, il est créé avec des mots de passe aléatoires et `AUTH_MODE=dev`. Pour la vraie production, y passer `AUTH_MODE=auth0` et renseigner les variables `AUTH0_*` (section 5), puis relancer le workflow.
+
+**Exposition** : les conteneurs n'écoutent que sur `127.0.0.1` (passerelle `8080`, ERP `8090`, boutiques `7001` à `7003`, mailpit `8025`, console RabbitMQ `15672`). Le nginx de l'hôte fait le reverse proxy en HTTPS, par exemple :
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+**Commandes utiles sur le VPS** :
+
+```bash
+cd ~/surfwear
+docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml logs -f gateway
+./scripts/deploy.sh <DOCKERHUB_USERNAME> <ancien-sha>   # rollback (PREVIOUS_IMAGE_TAG dans .env)
+```

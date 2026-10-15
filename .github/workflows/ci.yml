@@ -1,9 +1,9 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
+  # Sur main, la CI est lancée par deploy.yml (avant la construction des images).
   pull_request:
+  workflow_call:
 
 jobs:
   tests-unitaires:
