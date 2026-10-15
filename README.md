@@ -3,7 +3,7 @@
 Prototype de la **solution d'interopérabilité** entre une entreprise de surfwear et ses boutiques clientes.
 Projet fil rouge du module *Interopérabilité des systèmes d'information*, Master 2 SIGLIS, Université de Pau et des Pays de l'Adour (collège STEE), 2026/2027.
 
-Auteurs : ALLOUCH Salma, NDIAYE Hamidou, FAYE Serigne Saliou. Enseignant : E. BEGON.
+Auteurs : ALLOUCH Salma, NDIAYE Hamidou, FAYE Serigne Saliou HASNAOUI Ilyas. Enseignant : E. BEGON.
 
 ---
 
