@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ERP Surfwear, poste logisticien</title>
+<style>
+  :root { --vert: #8A950E; --gris: #7C7C7B; }
+  body { font-family: system-ui, sans-serif; margin: 2rem; color: #222; }
+  h1 { color: var(--vert); margin-bottom: 0; }
+  p.sous { color: var(--gris); margin-top: .3rem; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0 2rem; }
+  th, td { border: 1px solid #ddd; padding: .5rem; text-align: left; vertical-align: top; }
+  th { background: var(--vert); color: #fff; }
+  button { background: var(--vert); color: #fff; border: 0; padding: .4rem .8rem; border-radius: 4px; cursor: pointer; }
+  button:disabled { opacity: .5; }
+  #msg { padding: .6rem; background: #eef0d5; border-radius: 4px; display: none; }
+</style>
+</head>
+<body>
+<h1>ERP Surfwear, poste logisticien</h1>
+<p class="sous">Interface interne simulée. Elle n'est pas exposée aux boutiques : seul le connecteur ERP dialogue avec la plateforme.</p>
+<div id="msg"></div>
+<h2>Commandes à préparer</h2>
+<table><thead><tr><th>Commande</th><th>Boutique</th><th>Reçue le</th><th>Articles en stock</th><th></th></tr></thead><tbody id="cmd"></tbody></table>
+<h2>Production en cours (stock potentiel)</h2>
+<table><thead><tr><th>Lot</th><th>Référence</th><th>Quantité</th><th>Déjà réservée</th><th>Date prévue</th><th></th></tr></thead><tbody id="prod"></tbody></table>
+<script>
+const msg = (t) => { const m = document.getElementById('msg'); m.textContent = t; m.style.display = 'block'; };
+async function charger() {
+  const cmds = await (await fetch('/commandes-a-preparer')).json();
+  document.getElementById('cmd').innerHTML = cmds.length ? cmds.map(c => `<tr><td>${c.commande_id}</td><td>${c.boutique_id}</td><td>${c.cree_le}</td>
+    <td>${c.lignes.map(l => `${l.reference} × ${l.quantite}`).join('<br>')}</td>
+    <td><button onclick="expedier('${c.commande_id}', this)">Colis prêt, expédier</button></td></tr>`).join('')
+    : '<tr><td colspan="5">Aucune commande à préparer.</td></tr>';
+  const prod = await (await fetch('/production')).json();
+  document.getElementById('prod').innerHTML = prod.filter(p => p.statut === 'EN_COURS').map(p => `<tr><td>${p.id}</td><td>${p.reference}</td>
+    <td>${p.quantite}</td><td>${p.quantite_reservee}</td><td>${p.date_prevue}</td>
+    <td><button onclick="receptionner(${p.id}, this)">Réceptionner</button></td></tr>`).join('');
+}
+async function expedier(id, b) {
+  b.disabled = true;
+  const r = await fetch('/expeditions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ commande_id: id }) });
+  const d = await r.json();
+  msg(r.ok ? `Bon de livraison ${d.numero_bl} émis pour la commande ${id}. La boutique est notifiée automatiquement.` : d.erreur);
+  charger();
+}
+async function receptionner(id, b) {
+  b.disabled = true;
+  const r = await fetch('/production/' + id + '/reception', { method: 'POST' });
+  const d = await r.json();
+  msg(r.ok ? `Lot ${id} réceptionné : ${d.reference}, stock disponible ${d.stock_disponible}.` : d.erreur);
+  charger();
+}
+charger(); setInterval(charger, 5000);
+</script>
+</body>
+</html>

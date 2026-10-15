@@ -1,0 +1,9 @@
+{
+  "name": "@surfwear/analytics",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Service Analytics : tableau de bord des ventes pour les commerciaux",
+  "main": "src/index.js",
+  "dependencies": { "@surfwear/common": "*" }
+}

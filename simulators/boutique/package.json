@@ -1,0 +1,9 @@
+{
+  "name": "@surfwear/boutique-simulator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Simulateur du logiciel de gestion d'une boutique cliente (client REST + récepteur de webhooks)",
+  "main": "src/index.js",
+  "dependencies": { "@surfwear/common": "*" }
+}

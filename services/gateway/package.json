@@ -1,0 +1,16 @@
+{
+  "name": "@surfwear/gateway",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Passerelle d'API : point d'entrée unique, authentification Auth0, contrôle des droits, routage",
+  "main": "src/index.js",
+  "dependencies": {
+    "@surfwear/common": "*",
+    "express-oauth2-jwt-bearer": "^1.6.0",
+    "express-rate-limit": "^7.5.0",
+    "http-proxy-middleware": "^3.0.3",
+    "swagger-ui-express": "^5.0.1",
+    "yaml": "^2.7.0"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "@surfwear/erp-mock",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "ERP simulé de l'entreprise de surfwear (source de vérité du stock)",
+  "main": "src/index.js",
+  "dependencies": { "@surfwear/common": "*", "express": "^4.21.2" }
+}

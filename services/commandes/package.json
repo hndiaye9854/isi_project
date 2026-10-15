@@ -1,0 +1,9 @@
+{
+  "name": "@surfwear/commandes",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Service Commandes et Réservation",
+  "main": "src/index.js",
+  "dependencies": { "@surfwear/common": "*", "zod": "^3.24.1" }
+}

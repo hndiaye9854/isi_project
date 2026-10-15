@@ -1,0 +1,9 @@
+{
+  "name": "@surfwear/catalogue",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Service Catalogue et Disponibilité (cache Redis alimenté par les événements)",
+  "main": "src/index.js",
+  "dependencies": { "@surfwear/common": "*", "ioredis": "^5.4.2" }
+}

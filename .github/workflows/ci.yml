@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests-unitaires:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  bout-en-bout:
+    runs-on: ubuntu-latest
+    needs: tests-unitaires
+    env:
+      AUTH_MODE: dev
+    steps:
+      - uses: actions/checkout@v4
+      - name: Construction et démarrage de l'écosystème
+        run: docker compose up -d --build --wait --wait-timeout 300
+      - name: Test de bout en bout
+        run: bash scripts/smoke-test.sh
+      - name: Journaux en cas d'échec
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Arrêt
+        if: always()
+        run: docker compose down -v

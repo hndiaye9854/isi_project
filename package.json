@@ -1,0 +1,19 @@
+{
+  "name": "surfwear-interop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Prototype de la plateforme d'interopérabilité entre l'entreprise de surfwear et ses boutiques clientes (projet fil rouge, Interopérabilité des SI, M2 SIGLIS, UPPA)",
+  "workspaces": [
+    "packages/*",
+    "services/*",
+    "simulators/*"
+  ],
+  "scripts": {
+    "test": "node --test packages/common/test/*.test.js",
+    "demo": "bash scripts/demo.sh",
+    "smoke": "bash scripts/smoke-test.sh"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

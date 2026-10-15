@@ -1,0 +1,9 @@
+{
+  "name": "@surfwear/notifications",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Service Notifications : webhooks signés vers les logiciels des boutiques et e-mails",
+  "main": "src/index.js",
+  "dependencies": { "@surfwear/common": "*", "nodemailer": "^6.9.16", "zod": "^3.24.1" }
+}

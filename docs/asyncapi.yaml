@@ -1,0 +1,143 @@
+asyncapi: 3.0.0
+info:
+  title: Événements de la plateforme Surfwear
+  version: 1.0.0
+  description: |
+    Événements métier publiés sur le bus (RabbitMQ, échange "surfwear.events" de type topic).
+    Enveloppe au format CloudEvents 1.0 (JSON). La clé de routage est égale au champ "type".
+    Garantie de livraison : au moins une fois. Les consommateurs dédoublonnent grâce au champ "id".
+servers:
+  local:
+    host: rabbitmq:5672
+    protocol: amqp
+channels:
+  stockMisAJour:
+    address: com.surfwear.stock.mis-a-jour
+    messages:
+      stockMisAJour: { $ref: '#/components/messages/StockMisAJour' }
+  commandeCreee:
+    address: com.surfwear.commande.creee
+    messages:
+      commandeCreee: { $ref: '#/components/messages/CommandeCreee' }
+  commandeReservee:
+    address: com.surfwear.commande.reservee
+    messages:
+      commandeReservee: { $ref: '#/components/messages/CommandeReservee' }
+  commandeExpediee:
+    address: com.surfwear.commande.expediee
+    messages:
+      commandeExpediee: { $ref: '#/components/messages/CommandeExpediee' }
+operations:
+  publierStock:
+    action: send
+    channel: { $ref: '#/channels/stockMisAJour' }
+    summary: Publié par le connecteur ERP à chaque changement de stock. Consommé par le service Catalogue (mise à jour du cache).
+  publierCommandeCreee:
+    action: send
+    channel: { $ref: '#/channels/commandeCreee' }
+    summary: Publié par le service Commandes à la réception d'une commande.
+  publierCommandeReservee:
+    action: send
+    channel: { $ref: '#/channels/commandeReservee' }
+    summary: Publié par le service Commandes après réservation dans l'ERP. Consommé par Notifications et Analytics.
+  publierCommandeExpediee:
+    action: send
+    channel: { $ref: '#/channels/commandeExpediee' }
+    summary: Publié par le connecteur ERP quand le logisticien valide une expédition. Consommé par Commandes, Notifications et Analytics.
+components:
+  schemas:
+    Enveloppe:
+      type: object
+      required: [specversion, id, source, type, time, data]
+      properties:
+        specversion: { type: string, const: '1.0' }
+        id: { type: string }
+        source: { type: string, example: /surfwear/commandes }
+        type: { type: string }
+        time: { type: string, format: date-time }
+        datacontenttype: { type: string, const: application/json }
+  messages:
+    StockMisAJour:
+      contentType: application/cloudevents+json
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Enveloppe'
+          - type: object
+            properties:
+              data:
+                type: object
+                properties:
+                  gtin: { type: string }
+                  reference: { type: string }
+                  stock_physique: { type: integer }
+                  stock_reserve: { type: integer }
+                  stock_disponible: { type: integer }
+                  stock_potentiel:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        lot: { type: integer }
+                        quantite_disponible: { type: integer }
+                        date_prevue: { type: string, format: date }
+    CommandeCreee:
+      contentType: application/cloudevents+json
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Enveloppe'
+          - type: object
+            properties:
+              data:
+                type: object
+                properties:
+                  commande_id: { type: string, format: uuid }
+                  boutique_id: { type: string }
+                  lignes:
+                    type: array
+                    items: { type: object, properties: { gtin: { type: string }, quantite: { type: integer } } }
+    CommandeReservee:
+      contentType: application/cloudevents+json
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Enveloppe'
+          - type: object
+            properties:
+              data:
+                type: object
+                properties:
+                  commande_id: { type: string, format: uuid }
+                  boutique_id: { type: string }
+                  statut: { type: string, enum: [RESERVEE, RESERVEE_PARTIELLEMENT] }
+                  montant_total: { type: number }
+                  lignes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        gtin: { type: string }
+                        quantite_demandee: { type: integer }
+                        quantite_stock: { type: integer }
+                        production:
+                          type: array
+                          items: { type: object, properties: { quantite: { type: integer }, date_prevue: { type: string, format: date } } }
+                        quantite_non_couverte: { type: integer }
+                        prix_unitaire: { type: number }
+    CommandeExpediee:
+      contentType: application/cloudevents+json
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Enveloppe'
+          - type: object
+            properties:
+              data:
+                type: object
+                properties:
+                  commande_id: { type: string, format: uuid }
+                  boutique_id: { type: string }
+                  numero_bl: { type: string, example: BL-2026-00001 }
+                  lignes:
+                    type: array
+                    items: { type: object, properties: { gtin: { type: string }, quantite: { type: integer } } }
+                  reste_a_livrer:
+                    type: array
+                    items: { type: object, properties: { gtin: { type: string }, quantite: { type: integer }, date_prevue: { type: string, format: date } } }

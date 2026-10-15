@@ -1,0 +1,317 @@
+openapi: 3.0.3
+info:
+  title: API Surfwear B2B
+  version: 1.0.0
+  description: |
+    API de la plateforme d'interopérabilité entre l'entreprise de surfwear et ses boutiques clientes.
+
+    Toutes les routes exigent un jeton d'accès (OAuth2, émis par Auth0) dans l'en-tête `Authorization: Bearer <jeton>`.
+    La boutique est déduite du jeton : une boutique ne voit jamais les données d'une autre.
+
+    En mode démonstration (`AUTH_MODE=dev`), utilisez `dev-B001`, `dev-B002`, `dev-B003` ou `dev-commercial` comme jeton.
+  contact:
+    name: Projet fil rouge, M2 SIGLIS, UPPA
+servers:
+  - url: http://localhost:8080
+    description: Environnement local (docker compose)
+tags:
+  - name: Catalogue
+    description: Articles, stock réel et stock potentiel
+  - name: Commandes
+    description: Passage et suivi des commandes, avec réservation immédiate du stock
+  - name: Webhooks
+    description: Abonnement aux événements (confirmation, expédition)
+  - name: Statistiques
+    description: Tableau de bord des commerciaux
+security:
+  - auth0: []
+paths:
+  /api/v1/produits:
+    get:
+      tags: [Catalogue]
+      summary: Liste des articles avec leur disponibilité
+      description: "Droit requis : read:catalogue"
+      parameters:
+        - in: query
+          name: categorie
+          schema: { type: string, example: Accessoires }
+      responses:
+        '200':
+          description: Articles
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Produit' } }
+        '401': { $ref: '#/components/responses/NonAuthentifie' }
+        '403': { $ref: '#/components/responses/Interdit' }
+  /api/v1/produits/{gtin}:
+    get:
+      tags: [Catalogue]
+      summary: Détail d'un article
+      parameters: [{ $ref: '#/components/parameters/Gtin' }]
+      responses:
+        '200':
+          description: Article
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Produit' }
+        '404': { $ref: '#/components/responses/Introuvable' }
+  /api/v1/disponibilites/{gtin}:
+    get:
+      tags: [Catalogue]
+      summary: Disponibilité et délai pour une quantité donnée
+      description: Répond à la question "si je commande N pièces, combien sont livrables tout de suite, et quand arrive le reste ?"
+      parameters:
+        - $ref: '#/components/parameters/Gtin'
+        - in: query
+          name: quantite
+          schema: { type: integer, minimum: 1, example: 10 }
+      responses:
+        '200':
+          description: Disponibilité
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Disponibilite' }
+        '404': { $ref: '#/components/responses/Introuvable' }
+  /api/v1/commandes:
+    post:
+      tags: [Commandes]
+      summary: Passer une commande (le stock est réservé immédiatement dans l'ERP)
+      description: |
+        Droit requis : write:commandes.
+        L'en-tête `Idempotency-Key` est obligatoire : renvoyer la même clé renvoie la même commande, sans doublon.
+        Réponse 201 si l'ERP a réservé le stock, 202 si l'ERP est momentanément indisponible (la réservation sera rejouée).
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string, example: 7b1f0c2e-1d4a-4c55-9f3e-2a0d8c1b9e77 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NouvelleCommande' }
+      responses:
+        '201':
+          description: Commande créée et stock réservé
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Commande' }
+        '200':
+          description: Commande déjà reçue avec cette clé d'idempotence
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Commande' }
+        '202':
+          description: Commande acceptée, en attente de l'ERP
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Commande' }
+        '400': { $ref: '#/components/responses/Invalide' }
+    get:
+      tags: [Commandes]
+      summary: Commandes de la boutique
+      parameters:
+        - in: query
+          name: statut
+          schema: { $ref: '#/components/schemas/StatutCommande' }
+      responses:
+        '200':
+          description: Commandes
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Commande' } }
+  /api/v1/commandes/{id}:
+    get:
+      tags: [Commandes]
+      summary: Suivi d'une commande
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Commande
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Commande' }
+        '404': { $ref: '#/components/responses/Introuvable' }
+  /api/v1/webhooks:
+    post:
+      tags: [Webhooks]
+      summary: S'abonner aux événements de la boutique
+      description: |
+        Droit requis : manage:webhooks. Le secret renvoyé sert à vérifier l'en-tête `X-Surfwear-Signature`
+        (HMAC SHA-256 du corps brut, préfixé par `sha256=`). Il n'est communiqué qu'une seule fois.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url: { type: string, format: uri, example: 'https://logiciel.boutique.fr/surfwear/webhooks' }
+                evenements:
+                  type: array
+                  items: { type: string, enum: [com.surfwear.commande.reservee, com.surfwear.commande.expediee] }
+      responses:
+        '201':
+          description: Abonnement créé
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Abonnement' }
+    get:
+      tags: [Webhooks]
+      summary: Abonnements de la boutique
+      responses:
+        '200': { description: Abonnements }
+  /api/v1/webhooks/{id}:
+    delete:
+      tags: [Webhooks]
+      summary: Supprimer un abonnement
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Supprimé }
+  /api/v1/webhooks/livraisons:
+    get:
+      tags: [Webhooks]
+      summary: Journal des 50 dernières livraisons de webhooks
+      responses:
+        '200': { description: Journal }
+  /api/v1/stats/boutiques:
+    get:
+      tags: [Statistiques]
+      summary: Activité par boutique
+      description: "Droit requis : read:stats (commerciaux)"
+      responses:
+        '200': { description: Statistiques }
+  /api/v1/stats/references:
+    get:
+      tags: [Statistiques]
+      summary: Demande par référence
+      responses:
+        '200': { description: Statistiques }
+  /api/v1/stats/tensions:
+    get:
+      tags: [Statistiques]
+      summary: Références dont la demande dépasse le stock (à produire en priorité)
+      responses:
+        '200': { description: Statistiques }
+components:
+  securitySchemes:
+    auth0:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Jeton d'accès Auth0 (flux client credentials pour les logiciels des boutiques)
+  parameters:
+    Gtin:
+      in: path
+      name: gtin
+      required: true
+      description: Code article GTIN (EAN-13, standard GS1)
+      schema: { type: string, example: '3760123450097' }
+  responses:
+    NonAuthentifie:
+      description: Jeton manquant ou invalide
+      content: { application/json: { schema: { $ref: '#/components/schemas/Erreur' } } }
+    Interdit:
+      description: Droits insuffisants
+      content: { application/json: { schema: { $ref: '#/components/schemas/Erreur' } } }
+    Introuvable:
+      description: Ressource introuvable
+      content: { application/json: { schema: { $ref: '#/components/schemas/Erreur' } } }
+    Invalide:
+      description: Requête invalide
+      content: { application/json: { schema: { $ref: '#/components/schemas/Erreur' } } }
+  schemas:
+    Erreur:
+      type: object
+      properties:
+        erreur: { type: string }
+        details: {}
+        requestId: { type: string }
+    Produit:
+      type: object
+      properties:
+        gtin: { type: string, example: '3760123450097' }
+        reference: { type: string, example: AC-WAX-TROP }
+        libelle: { type: string, example: Wax eau tropicale }
+        categorie: { type: string, example: Accessoires }
+        taille: { type: string, nullable: true }
+        couleur: { type: string, nullable: true }
+        prix_unitaire: { type: number, example: 2.5 }
+        disponibilite:
+          type: object
+          properties:
+            stock_disponible: { type: integer }
+            stock_potentiel: { type: integer, description: Quantité en production non encore réservée }
+            prochaine_livraison: { type: string, format: date, nullable: true }
+    Disponibilite:
+      type: object
+      properties:
+        gtin: { type: string }
+        quantite_demandee: { type: integer }
+        livrable_immediatement: { type: integer }
+        livrable_plus_tard:
+          type: array
+          items:
+            type: object
+            properties:
+              quantite: { type: integer }
+              date_prevue: { type: string, format: date }
+        non_disponible: { type: integer }
+        mis_a_jour_le: { type: string, format: date-time }
+    NouvelleCommande:
+      type: object
+      required: [lignes]
+      properties:
+        reference_boutique: { type: string, example: 'CMD-BIARRITZ-0412' }
+        lignes:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [gtin, quantite]
+            properties:
+              gtin: { type: string, example: '3760123450097' }
+              quantite: { type: integer, minimum: 1, example: 4 }
+    StatutCommande:
+      type: string
+      enum: [RECUE, EN_ATTENTE_ERP, RESERVEE, RESERVEE_PARTIELLEMENT, EXPEDIEE_PARTIELLEMENT, EXPEDIEE]
+    Commande:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        boutique_id: { type: string, example: B001 }
+        statut: { $ref: '#/components/schemas/StatutCommande' }
+        reference_boutique: { type: string, nullable: true }
+        numero_bl: { type: string, nullable: true, example: BL-2026-00001 }
+        montant_total: { type: number, nullable: true }
+        cree_le: { type: string, format: date-time }
+        modifie_le: { type: string, format: date-time }
+        lignes:
+          type: array
+          items:
+            type: object
+            properties:
+              gtin: { type: string }
+              quantite: { type: integer }
+              quantite_stock: { type: integer, description: Réservée sur le stock de l'entrepôt }
+              quantite_production: { type: integer, description: Réservée sur la production en cours }
+              date_prevue: { type: string, format: date, nullable: true }
+              quantite_non_couverte: { type: integer }
+              quantite_expediee: { type: integer }
+              prix_unitaire: { type: number }
+    Abonnement:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        url: { type: string }
+        evenements: { type: array, items: { type: string } }
+        secret: { type: string, description: Secret HMAC, communiqué une seule fois }
