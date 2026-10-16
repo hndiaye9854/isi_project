@@ -361,6 +361,8 @@ location / {
 location /docs {                       # Swagger UI (conteneur swagger-ui, BASE_URL=/docs)
     proxy_pass http://127.0.0.1:8203;
     proxy_set_header Host $host;
+    proxy_hide_header Cache-Control;   # le contrat OpenAPI change : jamais mis en cache (Cloudflare, navigateur)
+    add_header Cache-Control "no-store" always;
 }
 ```
 
