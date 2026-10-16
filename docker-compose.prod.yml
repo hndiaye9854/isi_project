@@ -158,23 +158,44 @@ services:
       ANALYTICS_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/analytics
     healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8084/health"], interval: 10s, timeout: 3s, retries: 10 }
 
+  # Passerelle d'API : KrakenD CE (image construite depuis infra/krakend par le pipeline).
   gateway:
-    <<: *node-service
+    restart: unless-stopped
     image: ${DOCKERHUB_NAMESPACE}/surfwear-gateway:${IMAGE_TAG:-latest}
     environment:
-      <<: [*common-env, *auth-env]
-      PORT: 8080
-      OPENAPI_PATH: /app/docs/openapi.yaml
-      AUTH0_CLAIM_NAMESPACE: ${AUTH0_CLAIM_NAMESPACE:-https://surfwear.example/}
-      AUTH0_CLIENT_BOUTIQUES: ${AUTH0_CLIENT_BOUTIQUES:-}
-      TRUST_PROXY: ${TRUST_PROXY:-2}   # Cloudflare puis nginx devant la passerelle
+      <<: *auth-env
+      TRUST_PROXY: ${TRUST_PROXY:-2}   # Cloudflare puis nginx devant la passerelle : quota sur l'IP réelle du client
     depends_on:
       catalogue: { condition: service_healthy }
       commandes: { condition: service_healthy }
       notifications: { condition: service_healthy }
       analytics: { condition: service_healthy }
-    ports: ["127.0.0.1:${GATEWAY_PORT:-8201}:8080"]   # API publique + /docs (derrière nginx)
-    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"], interval: 10s, timeout: 3s, retries: 10 }
+      mock-oauth2: { condition: service_started }
+    ports: ["127.0.0.1:${GATEWAY_PORT:-8201}:8080"]   # API publique (derrière nginx)
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8080/__health"], interval: 10s, timeout: 3s, retries: 10 }
+    logging: *logging
+    networks: [plateforme, boutiques]
+
+  # Documentation interactive (Swagger UI) : nginx publie /docs vers ce conteneur.
+  swagger-ui:
+    image: swaggerapi/swagger-ui:v5.17.14
+    restart: unless-stopped
+    environment:
+      SWAGGER_JSON: /openapi/openapi.yaml
+      BASE_URL: /docs          # servi par nginx sous https://<domaine>/docs
+    volumes: [./docs/openapi.yaml:/openapi/openapi.yaml:ro]
+    ports: ["127.0.0.1:${DOCS_PORT:-8203}:8080"]
+    logging: *logging
+    networks: [boutiques]
+
+  # Faux fournisseur OAuth2, utilisé seulement quand AUTH_MODE=dev. Jamais publié sur l'hôte.
+  mock-oauth2:
+    image: ghcr.io/navikt/mock-oauth2-server:6.0.8
+    restart: unless-stopped
+    environment:
+      JSON_CONFIG_PATH: /config/config.json
+    volumes: [./infra/mock-oauth2/config.json:/config/config.json:ro]
+    logging: *logging
     networks: [plateforme, boutiques]
 
   # ---------------- Boutiques clientes (simulées) ----------------

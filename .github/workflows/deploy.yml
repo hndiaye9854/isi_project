@@ -41,7 +41,7 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          - { image: gateway, path: services/gateway }
+          - { image: gateway, context: infra/krakend, file: infra/krakend/Dockerfile }
           - { image: catalogue, path: services/catalogue }
           - { image: commandes, path: services/commandes }
           - { image: notifications, path: services/notifications }
@@ -58,8 +58,8 @@ jobs:
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
       - uses: docker/build-push-action@v6
         with:
-          context: .
-          file: Dockerfile
+          context: ${{ matrix.context || '.' }}
+          file: ${{ matrix.file || 'Dockerfile' }}
           build-args: SERVICE_PATH=${{ matrix.path }}
           platforms: linux/amd64
           push: true
@@ -142,11 +142,13 @@ jobs:
           SSH_OPTS=(-i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes)
           CIBLE="$VPS_USER@$VPS_HOST"
           ssh "${SSH_OPTS[@]}" -p "${VPS_SSH_PORT:-22}" "$CIBLE" \
-            "mkdir -p $DEPLOY_PATH/scripts $DEPLOY_PATH/infra"
+            "mkdir -p $DEPLOY_PATH/scripts $DEPLOY_PATH/infra $DEPLOY_PATH/docs"
           scp "${SSH_OPTS[@]}" -P "${VPS_SSH_PORT:-22}" docker-compose.prod.yml \
             "$CIBLE:$DEPLOY_PATH/docker-compose.prod.yml"
-          scp "${SSH_OPTS[@]}" -P "${VPS_SSH_PORT:-22}" -r infra/postgres infra/prometheus infra/grafana \
+          scp "${SSH_OPTS[@]}" -P "${VPS_SSH_PORT:-22}" -r infra/postgres infra/prometheus infra/grafana infra/mock-oauth2 \
             "$CIBLE:$DEPLOY_PATH/infra/"
+          scp "${SSH_OPTS[@]}" -P "${VPS_SSH_PORT:-22}" docs/openapi.yaml \
+            "$CIBLE:$DEPLOY_PATH/docs/openapi.yaml"
           scp "${SSH_OPTS[@]}" -P "${VPS_SSH_PORT:-22}" scripts/deploy/deploy.sh \
             "$CIBLE:$DEPLOY_PATH/scripts/deploy.sh"
           scp "${SSH_OPTS[@]}" -P "${VPS_SSH_PORT:-22}" "$RUNNER_TEMP/surfwear.env" \
@@ -169,7 +171,7 @@ jobs:
           ERP_URL: ${{ vars.PUBLIC_ERP_URL || 'https://isi-erp.hamidnd.me' }}
           AUTH_MODE: ${{ secrets.AUTH_MODE }}
         run: |
-          curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "$API_URL/health" > /dev/null
+          curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "$API_URL/__health" > /dev/null
           curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "$ERP_URL/health" > /dev/null
           if [ "$AUTH_MODE" = auth0 ]; then
             code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer dev-B001' "$API_URL/api/v1/produits")

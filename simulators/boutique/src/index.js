@@ -13,13 +13,14 @@ const SERVICE = `boutique-${ID}`;
 const logger = createLogger(SERVICE);
 const GATEWAY = env('GATEWAY_URL', 'http://gateway:8080');
 const URL_PUBLIQUE = env('PUBLIC_URL');
+const APPELANT = new URL(URL_PUBLIQUE).hostname;   // nom affiché par l'observatoire
 
 const etat = { stock: {}, commandes: [], evenements: [], secret: null, catalogue: {} };
 
 async function api(chemin, { method = 'GET', body, headers = {} } = {}) {
   const res = await fetch(`${GATEWAY}/api/v1${chemin}`, {
     method,
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await jeton()}`, ...headers },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await jeton()}`, 'X-Appelant': APPELANT, ...headers },
     body: body ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(15_000),
   });
@@ -55,6 +56,13 @@ app.post('/commander', route(async (req, res) => {
   });
   etat.commandes.unshift(c);
   res.status(201).json(c);
+}));
+
+// Rafraîchissement du catalogue (utilisé par la démo animée).
+app.post('/catalogue/rafraichir', route(async (_req, res) => {
+  const produits = await api('/produits');
+  for (const p of produits) etat.catalogue[p.gtin] = p.libelle + (p.taille ? ` (${p.taille})` : '');
+  res.json({ articles: produits.length });
 }));
 
 // Réception des webhooks : vérification de la signature HMAC avant tout traitement.

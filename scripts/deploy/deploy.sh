@@ -62,8 +62,8 @@ fi
 
 # Vérification HTTP de la passerelle, comme le ferait le reverse proxy.
 PORT=$(sed -n 's/^GATEWAY_PORT=//p' .env); PORT=${PORT:-8201}
-if command -v curl > /dev/null; then curl -fsS "http://127.0.0.1:$PORT/health" > /dev/null
-else wget -qO /dev/null "http://127.0.0.1:$PORT/health"; fi
+if command -v curl > /dev/null; then curl -fsS "http://127.0.0.1:$PORT/__health" > /dev/null
+else wget -qO /dev/null "http://127.0.0.1:$PORT/__health"; fi
 echo ">> Passerelle OK sur 127.0.0.1:$PORT"
 
 "${COMPOSE[@]}" ps

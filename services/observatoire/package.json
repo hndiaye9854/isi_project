@@ -1,0 +1,9 @@
+{
+  "name": "@surfwear/observatoire",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Démo animée : affiche en direct les échanges entre les composants et pilote une visite guidée",
+  "main": "src/index.js",
+  "dependencies": { "@surfwear/common": "*", "amqplib": "^0.10.4", "express": "^4.21.2" }
+}

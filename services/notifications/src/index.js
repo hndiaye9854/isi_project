@@ -5,7 +5,7 @@ import nodemailer from 'nodemailer';
 import { z } from 'zod';
 import {
   createLogger, createApp, finalizeApp, createDb, connectBus, env, envInt, envMap, route, sleep,
-  HttpError, boutiqueId, EVENTS,
+  HttpError, boutiqueId, EVENTS, tracer,
 } from '@surfwear/common';
 
 /**
@@ -36,8 +36,11 @@ export function signer(secret, corps) {
 
 async function livrer(abo, evt) {
   const corps = JSON.stringify(evt);
+  const cible = new URL(abo.url).hostname;
   let derniere;
   for (let t = 1; t <= 4; t++) {
+    const debut = Date.now();
+    tracer({ type: 'webhook', de: SERVICE, vers: cible, evenement: evt.type, essai: t, id: evt.id });
     try {
       const res = await fetch(abo.url, {
         method: 'POST',
@@ -51,12 +54,14 @@ async function livrer(abo, evt) {
         signal: AbortSignal.timeout(5000),
       });
       derniere = { code: res.status };
+      tracer({ type: 'reponse', de: cible, vers: SERVICE, statut: res.status, duree: Date.now() - debut, id: evt.id });
       if (res.ok) {
         await journal(abo, evt, 'LIVRE', t, res.status);
         return;
       }
     } catch (err) {
       derniere = { erreur: err.message };
+      tracer({ type: 'reponse', de: cible, vers: SERVICE, statut: 'injoignable', duree: Date.now() - debut, id: evt.id });
     }
     await sleep(500 * 2 ** t);
   }
@@ -97,7 +102,9 @@ async function traiter(evt) {
   await Promise.all(abos.map((a) => livrer(a, evt)));
   if (EMAILS[boutique]) {
     try {
-      await mailer.sendMail({ from: 'Surfwear <commandes@surfwear.test>', to: EMAILS[boutique], ...mail(evt) });
+      const message = mail(evt);
+      await mailer.sendMail({ from: 'Surfwear <commandes@surfwear.test>', to: EMAILS[boutique], ...message });
+      tracer({ type: 'mail', de: SERVICE, vers: 'mailpit', sujet: message.subject, destinataire: EMAILS[boutique] });
     } catch (err) {
       logger.warn({ err: err.message }, 'E-mail non envoyé');
     }

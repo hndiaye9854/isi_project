@@ -8,16 +8,17 @@ info:
     Toutes les routes exigent un jeton d'accès (OAuth2, émis par Auth0) dans l'en-tête `Authorization: Bearer <jeton>`.
     La boutique est déduite du jeton : une boutique ne voit jamais les données d'une autre.
 
-    En mode démonstration (`AUTH_MODE=dev`), utilisez `dev-B001`, `dev-B002`, `dev-B003` ou `dev-commercial` comme jeton.
+    Les requêtes passent par la passerelle KrakenD, qui vérifie le jeton et la permission de chaque route.
+
+    Pour obtenir un jeton : `bash scripts/jeton.sh B001` (ou `B002`, `B003`, `COMMERCIAL`), puis bouton **Authorize**.
+    En mode démonstration (`AUTH_MODE=dev`), le jeton vient du faux fournisseur OAuth2 local ; en mode `auth0`, d'Auth0.
   contact:
     name: Projet fil rouge, M2 SIGLIS, UPPA
 servers:
-  - url: /
-    description: Serveur qui affiche cette documentation
-  - url: https://isi.hamidnd.me
-    description: Production
   - url: http://localhost:8080
     description: Environnement local (docker compose)
+  - url: https://isi.hamidnd.me
+    description: Production
 tags:
   - name: Catalogue
     description: Articles, stock réel et stock potentiel
