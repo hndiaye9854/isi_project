@@ -45,10 +45,10 @@ export function createApp({ service, logger, rawBody = false }) {
   // appelant → passerelle → service pour l'observatoire, KrakenD ne publiant rien lui-même.
   app.use((req, res, next) => {
     if (!req.headers['x-sujet']) return next();
-    const appelant = req.headers['x-appelant'] || 'navigateur';
+    const appelant = req.headers['x-appelant'] || (service === 'mcp' ? 'assistant-ia' : 'navigateur');
     const debut = Date.now();
     const chemin = req.path;
-    tracer({ type: 'requete', de: appelant, vers: 'gateway', methode: req.method, chemin: `/api/v1${chemin}`, t: debut });
+    tracer({ type: 'requete', de: appelant, vers: 'gateway', methode: req.method, chemin: service === 'mcp' ? chemin : `/api/v1${chemin}`, t: debut });
     tracer({ type: 'requete', de: 'gateway', vers: service, methode: req.method, chemin, t: debut + 1 });
     res.on('finish', () => {
       const fin = Date.now();

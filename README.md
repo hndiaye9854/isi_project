@@ -54,6 +54,7 @@ Une plateforme qui combine API REST et événements. Elle se place entre l'ERP d
 | `commandes` | Commandes et réservation (PostgreSQL, outbox) |
 | `notifications` | Webhooks signés et e-mails |
 | `analytics` | Tableau de bord des commerciaux |
+| `mcp` | Serveur MCP : les assistants IA consultent la disponibilité et préparent les commandes ([docs/mcp.md](docs/mcp.md)) |
 | `erp-connector` | Adaptateur ERP vers bus d'événements |
 | `erp-mock` | ERP simulé + écran du logisticien |
 | `boutique-simulator` | Logiciel de gestion d'une boutique (3 instances) |
@@ -62,7 +63,7 @@ Une plateforme qui combine API REST et événements. Elle se place entre l'ERP d
 
 Le détail des choix techniques est dans [docs/architecture.md](docs/architecture.md).
 
-> **Périmètre du prototype** : uniquement des échanges REST et des événements. Les adaptateurs EDIFACT et CSV/SFTP du schéma cible, ainsi que le serveur MCP, sont prévus pour une étape suivante.
+> **Périmètre du prototype** : échanges REST, événements et serveur MCP pour les assistants IA. Les adaptateurs EDIFACT et CSV/SFTP du schéma cible sont prévus pour une étape suivante.
 
 ## 3. Démarrage rapide
 
@@ -244,6 +245,7 @@ surfwear-interop/
 │   ├── commandes/           Commandes et réservation
 │   ├── notifications/       Webhooks et e-mails
 │   ├── analytics/           Statistiques des commerciaux
+│   ├── mcp/                 Serveur MCP (assistants IA)
 │   ├── erp-connector/       Adaptateur ERP
 │   └── erp-mock/            ERP simulé + écran du logisticien
 ├── simulators/

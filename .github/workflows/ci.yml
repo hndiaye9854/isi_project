@@ -40,6 +40,13 @@ jobs:
         run: docker compose up -d --build --wait --wait-timeout 300
       - name: Test de bout en bout
         run: bash scripts/smoke-test.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Test du serveur MCP (client MCP officiel, protocoles 2025 et 2026)
+        run: node scripts/mcp-test.mjs
       - name: Journaux en cas d'échec
         if: failure()
         run: docker compose logs --no-color

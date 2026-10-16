@@ -238,6 +238,34 @@
         150,
         64
       ]
+    },
+    {
+      "id": "assistant-ia",
+      "type": "external",
+      "label": "Assistant IA",
+      "sublabel": "Claude, client MCP",
+      "pos": [
+        40,
+        760
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "mcp",
+      "type": "backend",
+      "label": "Serveur MCP",
+      "sublabel": "outils pour l'IA",
+      "pos": [
+        300,
+        470
+      ],
+      "size": [
+        150,
+        64
+      ]
     }
   ],
   "boundaries": [
@@ -262,7 +290,8 @@
         "notifications",
         "mailpit",
         "rabbitmq",
-        "erp-connector"
+        "erp-connector",
+        "mcp"
       ]
     },
     {

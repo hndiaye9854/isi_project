@@ -46,6 +46,7 @@ jobs:
           - { image: commandes, path: services/commandes }
           - { image: notifications, path: services/notifications }
           - { image: analytics, path: services/analytics }
+          - { image: mcp, path: services/mcp }
           - { image: erp-connector, path: services/erp-connector }
           - { image: erp-mock, path: services/erp-mock }
           - { image: boutique-simulator, path: simulators/boutique }

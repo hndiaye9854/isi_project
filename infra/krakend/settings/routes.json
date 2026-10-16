@@ -3,24 +3,30 @@
     "catalogue": "http://catalogue:8081",
     "commandes": "http://commandes:8082",
     "notifications": "http://notifications:8083",
-    "analytics": "http://analytics:8084"
+    "analytics": "http://analytics:8084",
+    "mcp": "http://mcp:8086"
   },
   "routes": [
-    { "method": "GET", "path": "/api/v1/produits", "service": "catalogue", "backend": "/produits", "scope": "read:catalogue" },
-    { "method": "GET", "path": "/api/v1/produits/{gtin}", "service": "catalogue", "backend": "/produits/{gtin}", "scope": "read:catalogue" },
-    { "method": "GET", "path": "/api/v1/disponibilites/{gtin}", "service": "catalogue", "backend": "/disponibilites/{gtin}", "scope": "read:catalogue" },
+    {"method": "GET", "path": "/api/v1/produits", "service": "catalogue", "backend": "/produits", "scope": "read:catalogue"},
+    {"method": "GET", "path": "/api/v1/produits/{gtin}", "service": "catalogue", "backend": "/produits/{gtin}", "scope": "read:catalogue"},
+    {"method": "GET", "path": "/api/v1/disponibilites/{gtin}", "service": "catalogue", "backend": "/disponibilites/{gtin}", "scope": "read:catalogue"},
 
-    { "method": "GET", "path": "/api/v1/commandes", "service": "commandes", "backend": "/commandes", "scope": "read:commandes" },
-    { "method": "POST", "path": "/api/v1/commandes", "service": "commandes", "backend": "/commandes", "scope": "write:commandes" },
-    { "method": "GET", "path": "/api/v1/commandes/{id}", "service": "commandes", "backend": "/commandes/{id}", "scope": "read:commandes" },
+    {"method": "GET", "path": "/api/v1/commandes", "service": "commandes", "backend": "/commandes", "scope": "read:commandes"},
+    {"method": "POST", "path": "/api/v1/commandes", "service": "commandes", "backend": "/commandes", "scope": "write:commandes"},
+    {"method": "GET", "path": "/api/v1/commandes/{id}", "service": "commandes", "backend": "/commandes/{id}", "scope": "read:commandes"},
 
-    { "method": "GET", "path": "/api/v1/webhooks", "service": "notifications", "backend": "/webhooks", "scope": "manage:webhooks" },
-    { "method": "POST", "path": "/api/v1/webhooks", "service": "notifications", "backend": "/webhooks", "scope": "manage:webhooks" },
-    { "method": "DELETE", "path": "/api/v1/webhooks/{id}", "service": "notifications", "backend": "/webhooks/{id}", "scope": "manage:webhooks" },
-    { "method": "GET", "path": "/api/v1/webhooks/livraisons", "service": "notifications", "backend": "/webhooks/livraisons", "scope": "manage:webhooks" },
+    {"method": "GET", "path": "/api/v1/webhooks", "service": "notifications", "backend": "/webhooks", "scope": "manage:webhooks"},
+    {"method": "POST", "path": "/api/v1/webhooks", "service": "notifications", "backend": "/webhooks", "scope": "manage:webhooks"},
+    {"method": "DELETE", "path": "/api/v1/webhooks/{id}", "service": "notifications", "backend": "/webhooks/{id}", "scope": "manage:webhooks"},
+    {"method": "GET", "path": "/api/v1/webhooks/livraisons", "service": "notifications", "backend": "/webhooks/livraisons", "scope": "manage:webhooks"},
 
-    { "method": "GET", "path": "/api/v1/stats/boutiques", "service": "analytics", "backend": "/stats/boutiques", "scope": "read:stats" },
-    { "method": "GET", "path": "/api/v1/stats/references", "service": "analytics", "backend": "/stats/references", "scope": "read:stats" },
-    { "method": "GET", "path": "/api/v1/stats/tensions", "service": "analytics", "backend": "/stats/tensions", "scope": "read:stats" }
+    {"method": "GET", "path": "/api/v1/stats/boutiques", "service": "analytics", "backend": "/stats/boutiques", "scope": "read:stats"},
+    {"method": "GET", "path": "/api/v1/stats/references", "service": "analytics", "backend": "/stats/references", "scope": "read:stats"},
+    {"method": "GET", "path": "/api/v1/stats/tensions", "service": "analytics", "backend": "/stats/tensions", "scope": "read:stats"},
+
+    {"method": "POST", "path": "/mcp", "service": "mcp", "backend": "/mcp", "audience": "mcp", "scopes": ["read:catalogue", "read:commandes", "write:commandes", "manage:webhooks", "read:stats"]},
+    {"method": "GET", "path": "/mcp", "service": "mcp", "backend": "/mcp", "audience": "mcp", "scopes": ["read:catalogue", "read:commandes", "write:commandes", "manage:webhooks", "read:stats"]},
+    {"method": "GET", "path": "/.well-known/oauth-protected-resource", "service": "mcp", "backend": "/.well-known/oauth-protected-resource", "public": true},
+    {"method": "GET", "path": "/.well-known/oauth-protected-resource/mcp", "service": "mcp", "backend": "/.well-known/oauth-protected-resource/mcp", "public": true}
   ]
 }

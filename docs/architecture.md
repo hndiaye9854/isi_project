@@ -9,7 +9,7 @@ Le prototype implémente la solution TO BE avec **uniquement des échanges REST*
 - toutes les boutiques simulées sont de type A (logiciel capable d'appeler une API REST et de recevoir des webhooks) ;
 - les adaptateurs EDIFACT et CSV/SFTP du schéma cible ne sont pas implémentés, par choix de périmètre. L'architecture permet de les ajouter comme de nouveaux adaptateurs, sans modifier les autres services ;
 - l'identité est gérée par **Auth0** (OAuth2, jetons JWT) ;
-- l'accès des assistants IA par MCP sera ajouté dans une prochaine étape.
+- les assistants IA accèdent à la plateforme par un serveur MCP (Model Context Protocol), placé derrière la passerelle (voir [mcp.md](mcp.md)).
 
 ## Vue d'ensemble
 
@@ -59,6 +59,7 @@ flowchart LR
 | `commandes` | Création des commandes, réservation immédiate dans l'ERP, suivi, reprise si l'ERP est indisponible | PostgreSQL | CommandeCreee, CommandeReservee | CommandeExpediee |
 | `notifications` | Abonnements des boutiques, webhooks signés avec nouvelles tentatives, e-mails | PostgreSQL | | CommandeReservee, CommandeExpediee |
 | `analytics` | Statistiques pour les commerciaux (activité, références en tension) | PostgreSQL | | CommandeReservee, CommandeExpediee |
+| `mcp` | Serveur MCP derrière KrakenD : outils pour les assistants IA (catalogue, disponibilité, préparation et passage de commande, suivi, références en tension), permission vérifiée par outil | aucun | | |
 | `erp-connector` | Adaptateur : façade REST vers l'ERP et traduction de son journal de changements en événements | Redis (position de lecture) | StockMisAJour, CommandeExpediee | |
 | `erp-mock` | ERP simulé, avec l'écran du logisticien | PostgreSQL | | |
 | `boutique-simulator` | Logiciel de gestion d'une boutique : commande par API, réception des webhooks, stock local | mémoire | | |
@@ -105,4 +106,4 @@ Chaque service publie une trace par échange (requête, réponse, événement, w
 - **Briques managées** : RabbitMQ ou Kafka en cluster, PostgreSQL et Redis répliqués.
 - **Adaptateurs EDIFACT (AS2) et CSV (SFTP)** pour les boutiques de type B et C.
 - **Portail web** pour les responsables de boutique (Auth0 Authorization Code + PKCE).
-- **Serveur MCP** pour permettre aux assistants IA de consulter la disponibilité et de préparer les commandes.
+- **Serveur MCP, phase 2** : connexion des responsables de boutique depuis Claude.ai ou Claude Desktop (OAuth Authorization Code + PKCE avec Auth0).
