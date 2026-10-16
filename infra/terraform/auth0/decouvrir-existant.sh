@@ -10,7 +10,10 @@ lire_tfvar() { sed -n "s/^$1[[:space:]]*=[[:space:]]*\"\(.*\)\"/\1/p" terraform.
 DOMAINE=$(lire_tfvar auth0_domain)
 CLIENT_ID=$(lire_tfvar terraform_client_id)
 CLIENT_SECRET=$(lire_tfvar terraform_client_secret)
-AUDIENCE=${AUDIENCE:-https://api.surfwear.example}
+# Audience : variable d'environnement, sinon terraform.tfvars, sinon la valeur par défaut de variables.tf.
+AUDIENCE=${AUDIENCE:-$(lire_tfvar audience)}
+AUDIENCE=${AUDIENCE:-$(sed -n '/variable "audience"/,/^}/s/^[[:space:]]*default[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' variables.tf)}
+echo "Audience recherchée : $AUDIENCE"
 [ -n "$DOMAINE" ] && [ -n "$CLIENT_ID" ] && [ -n "$CLIENT_SECRET" ] || { echo "Compléter terraform.tfvars d'abord"; exit 1; }
 
 # Correspondance Client ID -> boutique, telle qu'elle était configurée à la main dans le .env du projet.
