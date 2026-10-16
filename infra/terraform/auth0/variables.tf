@@ -17,7 +17,7 @@ variable "terraform_client_secret" {
 variable "audience" {
   description = "Identifiant (audience) de l'API Surfwear. Ne peut plus changer une fois l'API créée."
   type        = string
-  default     = "https://api.surfwear.example"
+  default     = "https://api.surfwear.isi"
 }
 
 variable "boutiques" {
@@ -28,7 +28,7 @@ variable "boutiques" {
   default = {
     B001 = { nom = "Boutique Biarritz" }
     B002 = { nom = "Boutique Hossegor" }
-    B003 = { nom = "Boutique Lacanau" }
+    B003 = { nom = "Boutique Bayonne" }
   }
 }
 
