@@ -131,9 +131,7 @@ const DETOURS = {
   'observatoire>boutique-lacanau': [[40, 88], [14, 88], [14, 442], [40, 442]],
   'observatoire>rabbitmq': [[190, 88], [280, 88], [280, 140], [800, 140], [800, 380], [830, 380]],
   'catalogue>erp-connector': [[710, 306], [790, 306], [790, 88], [830, 88]],
-  // Assistant IA -> passerelle -> serveur MCP -> services (le serveur MCP n'a pas de lien fixe dans le schéma)
-  'assistant-ia>gateway': [[190, 792], [262, 792], [262, 410], [362, 410], [362, 358]],
-  'gateway>mcp': [[388, 354], [388, 470]],
+  // Serveur MCP -> services : appels internes sans lien fixe dans le schéma (ils croiseraient ceux de la passerelle)
   'mcp>catalogue': [[450, 494], [522, 494], [522, 330], [560, 330]],
   'mcp>commandes': [[450, 502], [526, 502], [526, 190], [560, 190]],
   'mcp>analytics': [[450, 510], [530, 510], [530, 470], [560, 470]],

@@ -3,7 +3,7 @@
 Prototype de la **solution d'interopérabilité** entre une entreprise de surfwear et ses boutiques clientes.
 Projet fil rouge du module *Interopérabilité des systèmes d'information*, Master 2 SIGLIS, Université de Pau et des Pays de l'Adour (collège STEE), 2026/2027.
 
-Auteurs : ALLOUCH Salma, NDIAYE Hamidou, FAYE Serigne Saliou HASNAOUI Ilyas. Enseignant : E. BEGON.
+Auteurs : ALLOUCH Salma, NDIAYE Hamidou, FAYE Serigne Saliou, HASNAOUI Ilyas. Enseignant : E. BEGON.
 
 ---
 
@@ -36,6 +36,13 @@ Une plateforme qui combine API REST et événements. Elle se place entre l'ERP d
 
 ![Schéma des flux](docs/schema-flux-to-be.png)
 
+Ce schéma est la solution **cible** de l'étude. Ce qui tourne réellement dans le prototype est décrit par :
+
+- [docs/architecture.md](docs/architecture.md) : vue d'ensemble et trajet d'une commande (Mermaid, lisibles sur GitHub) ;
+- [docs/architecture-actuelle.excalidraw](docs/architecture-actuelle.excalidraw) : réseaux, ports et flux (à ouvrir sur excalidraw.com) ;
+- l'observatoire (http://localhost:8070, [section 4](#démo-animée-des-flux-observatoire)) : le même schéma, animé en direct ;
+- [docs/mcp.md](docs/mcp.md) : le trajet d'un assistant IA.
+
 | Ce qui change | Comment |
 | --- | --- |
 | Plus de double réservation | Le stock est réservé dans l'ERP **au moment de la commande**, dans une transaction qui verrouille les lignes de stock. |
@@ -58,6 +65,9 @@ Une plateforme qui combine API REST et événements. Elle se place entre l'ERP d
 | `erp-connector` | Adaptateur ERP vers bus d'événements |
 | `erp-mock` | ERP simulé + écran du logisticien |
 | `boutique-simulator` | Logiciel de gestion d'une boutique (3 instances) |
+| `mock-oauth2` | Faux fournisseur OAuth2 du mode démonstration et de la CI |
+| `swagger-ui` | Documentation interactive de l'API |
+| `observatoire` | Démo animée des flux en direct (profil `demo`, jamais en production) |
 
 **Infrastructure** : RabbitMQ (bus d'événements), PostgreSQL (une base par service), Redis (cache), Mailpit (boîte mail de test). Prometheus et Grafana sont disponibles en option.
 
@@ -71,7 +81,7 @@ Le détail des choix techniques est dans [docs/architecture.md](docs/architectur
 
 - Docker 24 ou plus récent, avec Docker Compose v2. **Podman** fonctionne aussi, avec `podman compose`.
 - Environ 2 Go de mémoire libre.
-- Ports libres : 8080, 8088, 8090, 8099, 7001 à 7003, 8025, 15672.
+- Ports libres : 8080, 8088, 8090, 8099, 7001 à 7003, 8025, 15672, et 8070 pour l'observatoire.
 
 ### Lancer l'écosystème
 
@@ -94,6 +104,8 @@ docker compose ps
 | Adresse | Contenu |
 | --- | --- |
 | http://localhost:8088 | Documentation interactive de l'API (Swagger UI), qui appelle la passerelle sur http://localhost:8080 |
+| http://localhost:8080/mcp | Serveur MCP pour les assistants IA, derrière la passerelle (jeton : `bash scripts/jeton.sh B001 --mcp`, voir [docs/mcp.md](docs/mcp.md)) |
+| http://localhost:8070 | Observatoire : démo animée des flux (avec `--profile demo`) |
 | http://localhost:8099 | Faux fournisseur OAuth2 du mode démonstration (jetons : `bash scripts/jeton.sh B001`) |
 | http://localhost:8090/logistique/ | ERP simulé : écran du logisticien (expédier, réceptionner la production) |
 | http://localhost:7001 | Logiciel de la boutique de Biarritz (B001) |
@@ -164,7 +176,7 @@ docker compose --profile demo up -d --build
 
 Ouvrez ensuite http://localhost:8070.
 
-- **Visite guidée** : six étapes à lancer une par une (catalogue, commande, trois boutiques en même temps, expédition, réception de production, message invalide jusqu'à la file d'erreurs). Chaque étape explique ce que l'on va voir.
+- **Visite guidée** : sept étapes à lancer une par une (catalogue, commande, trois boutiques en même temps, expédition, réception de production, assistant IA qui commande par le serveur MCP, message invalide jusqu'à la file d'erreurs). L'étape MCP demande le mode dev. Chaque étape explique ce que l'on va voir.
 - **Mode libre** : choisir une boutique, un article et une quantité, puis commander, expédier ou réceptionner.
 - **Swagger** : les appels faits sur http://localhost:8088 apparaissent aussi.
 - La vitesse se règle (× 0,5 à × 4) : les échanges réels durent quelques millisecondes, ils sont rejoués dans l'ordre pour rester lisibles.
@@ -190,7 +202,7 @@ Elle lit ensuite la boutique dans le jeton.
 | `manage:webhooks` | ✔ | |
 | `read:stats` | | ✔ |
 
-**Configuration en code (Terraform)** : l'API, ses permissions, les applications des boutiques et du commercial, leurs autorisations et l'Action qui ajoute `boutique_id` au jeton sont décrites dans [infra/terraform/auth0](infra/terraform/auth0/README.md). Ajouter une boutique, c'est une ligne dans `variables.tf`.
+**Configuration en code (Terraform)** : l'API, ses permissions, les applications des boutiques et du commercial, leurs autorisations, l'Action qui ajoute `boutique_id` au jeton et l'API du serveur MCP (`mcp.tf`) sont décrites dans [infra/terraform/auth0](infra/terraform/auth0/README.md). Ajouter une boutique, c'est une ligne dans `variables.tf`.
 
 ```bash
 cd infra/terraform/auth0 && terraform init && terraform apply && cd ../../..
@@ -201,7 +213,9 @@ Puis `AUTH_MODE=auth0` dans `.env` et `docker compose up -d`. Le guide complet e
 
 **Mode démonstration** (`AUTH_MODE=dev`, utilisé par défaut et par la CI) : le faux fournisseur `mock-oauth2` remplace Auth0 et délivre des jetons signés avec les mêmes permissions et le même claim `boutique_id`. La passerelle les vérifie exactement comme ceux d'Auth0. Ce mode ne doit jamais être utilisé en production.
 
-**Obtenir un jeton** (pour Swagger ou curl) : `bash scripts/jeton.sh B001` le copie dans le presse-papiers ; `B002`, `B003` ou `COMMERCIAL` pour les autres profils. Le script interroge le faux fournisseur ou Auth0 selon `AUTH_MODE`.
+**Obtenir un jeton** (pour Swagger ou curl) : `bash scripts/jeton.sh B001` le copie dans le presse-papiers ; `B002`, `B003` ou `COMMERCIAL` pour les autres profils, `--imprimer` pour l'afficher, `--mcp` pour un jeton du serveur MCP. Le script interroge le faux fournisseur ou Auth0 selon `AUTH_MODE`.
+
+**Audiences** : en mode dev, `https://api.surfwear.example` (API) et `https://mcp.surfwear.example` (MCP). Sur un tenant Auth0, ce sont les valeurs `audience` et `mcp_audience` de Terraform ; celles de production sont `https://api.surfwear.isi` et `https://mcp.surfwear.isi`.
 
 ## 6. Utiliser l'API
 
@@ -232,6 +246,8 @@ curl -s -X POST http://localhost:8080/api/v1/commandes \
 
 **Statuts d'une commande** : `RECUE`, `EN_ATTENTE_ERP`, `RESERVEE`, `RESERVEE_PARTIELLEMENT` (une partie sur la production), `EXPEDIEE_PARTIELLEMENT` et `EXPEDIEE`.
 
+**Assistants IA** : les mêmes fonctions (catalogue, disponibilité, commande, suivi, références en tension) sont proposées aux assistants IA par le serveur MCP, sur `POST /mcp`. Voir [docs/mcp.md](docs/mcp.md).
+
 **Vérifier un webhook** (côté logiciel de la boutique) : calculer `sha256=` suivi du HMAC SHA-256 du corps brut, avec le secret reçu à l'abonnement, puis le comparer à l'en-tête `X-Surfwear-Signature`. Un exemple complet se trouve dans `simulators/boutique/src/index.js`.
 
 ## 7. Structure du monorepo
@@ -247,7 +263,8 @@ surfwear-interop/
 │   ├── analytics/           Statistiques des commerciaux
 │   ├── mcp/                 Serveur MCP (assistants IA)
 │   ├── erp-connector/       Adaptateur ERP
-│   └── erp-mock/            ERP simulé + écran du logisticien
+│   ├── erp-mock/            ERP simulé + écran du logisticien
+│   └── observatoire/        Démo animée des flux (schéma archify + traces en direct)
 ├── simulators/
 │   └── boutique/            Logiciel de boutique simulé
 ├── infra/
@@ -255,11 +272,12 @@ surfwear-interop/
 │   ├── terraform/auth0/     Configuration Auth0 en Terraform
 │   ├── mock-oauth2/         Faux fournisseur OAuth2 (mode démonstration)
 │   └── postgres, prometheus, grafana
-├── docs/                    OpenAPI, AsyncAPI, architecture, guide Auth0, schéma des flux
-├── scripts/                 Démonstration et test de bout en bout
+├── docs/                    OpenAPI, AsyncAPI, architecture, Auth0, MCP, schémas Excalidraw
+├── scripts/                 Jetons, démonstration, tests (smoke-test.sh, mcp-test.mjs), déploiement
 ├── Dockerfile               Image commune (argument SERVICE_PATH)
-├── docker-compose.yml       Orchestration complète
-└── .github/workflows/ci.yml Intégration continue
+├── docker-compose.yml       Orchestration complète (profils demo et monitoring)
+├── docker-compose.prod.yml  Production sur le VPS
+└── .github/workflows/       ci.yml (intégration continue), deploy.yml (déploiement)
 ```
 
 Le monorepo utilise les *workspaces* npm. Une seule image Docker sert pour tous les services : l'argument `SERVICE_PATH` choisit le service, et seules ses dépendances sont installées.
@@ -273,6 +291,7 @@ docker build --build-arg SERVICE_PATH=services/catalogue -t surfwear/catalogue .
 ```bash
 npm ci && npm test              # tests unitaires
 bash scripts/smoke-test.sh      # test de bout en bout (plateforme démarrée, mode dev)
+node scripts/mcp-test.mjs       # serveur MCP avec le client officiel (protocoles 2025 et 2026)
 ```
 
 Le test de bout en bout vérifie :
@@ -284,7 +303,9 @@ Le test de bout en bout vérifie :
 - l'expédition avec notification par webhook ;
 - les statistiques.
 
-La CI GitHub Actions (`.github/workflows/ci.yml`) lance les tests unitaires. Elle construit ensuite toutes les images, démarre l'écosystème complet et exécute le test de bout en bout à chaque *push* et *pull request*.
+Le test MCP vérifie la découverte OAuth, le refus d'une connexion sans jeton, les outils visibles selon le profil (boutique ou commercial), la ressource et le prompt, une commande passée par un assistant (simulation, idempotence, suivi) et le cloisonnement entre boutiques.
+
+La CI GitHub Actions (`.github/workflows/ci.yml`) lance les tests unitaires et vérifie la configuration KrakenD (modes dev et auth0) et Terraform. Elle construit ensuite toutes les images, démarre l'écosystème complet, puis exécute le test de bout en bout et le test MCP à chaque *push* et *pull request*.
 
 ## 9. Supervision
 
@@ -330,8 +351,8 @@ En production : API et documentation sur **https://isi.hamidnd.me** (`/docs`), s
 
 Chaque *push* sur `main` (ou un lancement manuel dans l'onglet *Actions*) exécute `.github/workflows/deploy.yml` :
 
-1. la CI (tests unitaires et test de bout en bout) ;
-2. la construction des 8 images (dont la passerelle KrakenD, construite depuis `infra/krakend`), poussées sur DockerHub sous `<DOCKERHUB_USERNAME>/surfwear-<service>`, avec les tags `latest` et le SHA du commit ;
+1. la CI (tests unitaires, test de bout en bout et test MCP) ;
+2. la construction des 9 images (dont la passerelle KrakenD, construite depuis `infra/krakend`, et le serveur MCP), poussées sur DockerHub sous `<DOCKERHUB_USERNAME>/surfwear-<service>`, avec les tags `latest` et le SHA du commit ;
 3. la génération du `.env` de production à partir des secrets GitHub, puis sa copie sur le VPS (droits 600) avec `docker-compose.prod.yml`, `infra/`, `docs/openapi.yaml` et `scripts/deploy/deploy.sh` ;
 4. l'exécution de ce script en SSH : `pull`, alignement des mots de passe Postgres et RabbitMQ, `up --wait`, contrôle de la passerelle (`/__health`) ;
 5. un contrôle via les domaines publics : santé de l'API et de l'ERP, documentation `/docs`, découverte OAuth du MCP, `/mcp` refusé sans jeton et, en mode `auth0`, refus des jetons invalides.

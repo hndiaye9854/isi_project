@@ -6,12 +6,39 @@ Exemples : « Ai-je de quoi tenir le week-end en boardshorts taille 34 ? Sinon, 
 
 ## Architecture
 
+```mermaid
+flowchart LR
+  B[Boutiques / Swagger] -- "/api/v1/... + jeton (audience API)" --> K[KrakenD]
+  IA[Assistants IA] -- "/mcp + jeton (audience MCP)" --> K
+  K --> SVC[Catalogue, Commandes, Analytics]
+  K -- "X-Boutique-Id, X-Sujet, X-Scopes" --> M[Serveur MCP]
+  M -- "REST interne, X-Boutique-Id, sans jeton" --> SVC
 ```
-Boutiques / Swagger ─┐
-                     ├──► KrakenD ──► /api/v1/... ──► Catalogue, Commandes, Analytics
-Assistants IA ───────┘       │
-                             └──► /mcp ──► Serveur MCP ──► Catalogue, Commandes, Analytics
-                                          (réseau interne, avec X-Boutique-Id)
+
+```mermaid
+sequenceDiagram
+  participant IA as Assistant IA
+  participant A as Auth0
+  participant K as KrakenD
+  participant M as Serveur MCP
+  participant S as Services
+  IA->>K: GET /.well-known/oauth-protected-resource/mcp
+  K-->>IA: serveur d'autorisation, permissions
+  IA->>A: jeton (audience MCP)
+  A-->>IA: JWT (boutique_id, permissions)
+  IA->>K: POST /mcp tools/list + jeton
+  K->>M: requête + identité tirée du jeton
+  M-->>IA: outils permis par le jeton
+  IA->>K: POST /mcp tools/call preparer_commande
+  K->>M: requête + identité
+  M->>S: GET /produits (X-Boutique-Id)
+  S-->>M: prix et disponibilités
+  M-->>IA: simulation (montant, délais)
+  Note over IA: l'assistant demande l'accord de l'utilisateur
+  IA->>K: POST /mcp tools/call passer_commande
+  K->>M: requête + identité
+  M->>S: POST /commandes + Idempotency-Key
+  M-->>IA: commande RESERVEE
 ```
 
 - Le serveur MCP (`services/mcp`) est **derrière la passerelle KrakenD**, comme les autres services : une seule porte d'entrée pour la sécurité, les quotas et les journaux.
@@ -37,7 +64,7 @@ Un assistant ne voit que les outils permis par son jeton : une boutique a `passe
 
 ## Authentification
 
-- Audience dédiée : `https://mcp.surfwear.example` (variable `MCP_AUDIENCE`). Un jeton de l'API REST ne fonctionne pas sur `/mcp`, et inversement.
+- Audience dédiée (variable `MCP_AUDIENCE`) : `https://mcp.surfwear.example` en mode dev et sur le tenant de développement, `https://mcp.surfwear.isi` en production (valeur par défaut de `mcp_audience` dans Terraform et du déploiement). Un jeton de l'API REST ne fonctionne pas sur `/mcp`, et inversement.
 - Découverte OAuth (RFC 9728), publique : `GET /.well-known/oauth-protected-resource/mcp` indique le serveur d'autorisation (Auth0, ou le faux fournisseur en mode dev).
 - Auth0 : l'API « MCP Surfwear B2B » et les autorisations des boutiques et du commercial sont dans `infra/terraform/auth0/mcp.tf` (`terraform apply`).
 
@@ -69,7 +96,9 @@ Transport **Streamable HTTP**, URL `http://localhost:8080/mcp`, en-tête `Author
 claude mcp add --transport http surfwear http://localhost:8080/mcp --header "Authorization: Bearer $(bash scripts/jeton.sh B001 --imprimer --mcp)"
 ```
 
-**Observatoire** (`docker compose --profile demo up -d`, http://localhost:8070) : l'étape « Un assistant IA commande (MCP) » montre le trajet assistant → KrakenD → serveur MCP → services en direct.
+**Observatoire** (`docker compose --profile demo up -d`, http://localhost:8070, mode dev) : l'étape « Un assistant IA commande (MCP) » montre le trajet assistant → KrakenD → serveur MCP → services en direct.
+
+**Production** : https://mcp.hamidnd.me/mcp (seules `/mcp` et la découverte OAuth sont publiées sur ce domaine).
 
 ## Ajouter un outil
 

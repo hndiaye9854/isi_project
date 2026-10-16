@@ -336,7 +336,11 @@
       "id": "nav-gw",
       "from": "navigateur",
       "to": "gateway",
-      "label": "Try it out"
+      "label": "Try it out",
+      "labelAt": [
+        217,
+        616
+      ]
     },
     {
       "id": "gw-auth0",
@@ -426,6 +430,40 @@
       "labelAt": [
         635,
         697
+      ]
+    },
+    {
+      "id": "ia-gw",
+      "from": "assistant-ia",
+      "to": "gateway",
+      "label": "/mcp · JWT",
+      "fromSide": "right",
+      "toSide": "left",
+      "via": [
+        [
+          257,
+          792
+        ],
+        [
+          257,
+          322
+        ]
+      ],
+      "labelAt": [
+        223,
+        808
+      ]
+    },
+    {
+      "id": "gw-mcp",
+      "from": "gateway",
+      "to": "mcp",
+      "label": "/mcp",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        400,
+        412
       ]
     }
   ]
