@@ -8,7 +8,7 @@ import {
   id       = each.value
 }
 
-# Les permissions d'une API existante doivent être importées (le provider refuse de les créer par-dessus).
+# Les permissions de l'API existante s'importent par son identifiant (audience), pas par son id interne.
 import {
   for_each = var.import_api_id == null ? toset([]) : toset([var.audience])
   to       = auth0_resource_server_scopes.api
