@@ -33,7 +33,7 @@ x-auth-env: &auth-env
   AUTH_MODE: ${AUTH_MODE:-auth0}
   AUTH0_DOMAIN: ${AUTH0_DOMAIN:-}
   AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:-}
-  MCP_AUDIENCE: ${MCP_AUDIENCE:-https://mcp.surfwear.example}
+  MCP_AUDIENCE: ${MCP_AUDIENCE:-https://mcp.surfwear.isi}
 
 services:
   # ---------------- Infrastructure ----------------

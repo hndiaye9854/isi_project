@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Recopie dans .env les valeurs Auth0 produites par Terraform (infra/terraform/auth0) :
-# domaine, audience, Client ID et secrets des boutiques et du commercial. Les autres lignes du .env sont conservées.
+# domaine, audiences (API et MCP), Client ID et secrets des boutiques et du commercial. Les autres lignes du .env sont conservées.
 # Usage : bash scripts/env-depuis-terraform.sh   (après "terraform apply"). Demande jq, et terraform ou Docker.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -19,6 +19,7 @@ val() { jq -r "$1" <<< "$SORTIES"; }
 
 majvar AUTH0_DOMAIN "$(val .auth0_domain.value)"
 majvar AUTH0_AUDIENCE "$(val .audience.value)"
+majvar MCP_AUDIENCE "$(val .mcp_audience.value)"
 for code in $(val '.boutiques_client_id.value | keys[]'); do
   majvar "AUTH0_${code}_CLIENT_ID" "$(val ".boutiques_client_id.value[\"$code\"]")"
   majvar "AUTH0_${code}_CLIENT_SECRET" "$(val ".boutiques_client_secret.value[\"$code\"]")"

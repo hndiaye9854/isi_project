@@ -11,7 +11,8 @@
 #   Auth0     : AUTH_MODE, AUTH0_DOMAIN, AUTH0_AUDIENCE, AUTH0_CLAIM_NAMESPACE, AUTH0_CLIENT_BOUTIQUES,
 #               AUTH0_B00{1,2,3}_CLIENT_ID / _CLIENT_SECRET
 # Variables facultatives (Settings > Variables) : VPS_DEPLOY_PATH (défaut : surfwear, relatif au $HOME),
-#   PUBLIC_API_URL, PUBLIC_ERP_URL (contrôle final via le domaine public).
+#   PUBLIC_API_URL, PUBLIC_ERP_URL (contrôle final via le domaine public),
+#   MCP_AUDIENCE (défaut : https://mcp.surfwear.isi, identique à mcp_audience de Terraform).
 # Le .env de production est généré ici à partir des secrets, puis copié sur le VPS en 600.
 name: Deploy
 
@@ -112,11 +113,13 @@ jobs:
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           RABBITMQ_USER: ${{ secrets.RABBITMQ_USER }}
           RABBITMQ_PASSWORD: ${{ secrets.RABBITMQ_PASSWORD }}
+          MCP_AUDIENCE: ${{ vars.MCP_AUDIENCE || 'https://mcp.surfwear.isi' }}
         run: |
           umask 077
           vars=(AUTH_MODE AUTH0_DOMAIN AUTH0_AUDIENCE AUTH0_CLAIM_NAMESPACE AUTH0_CLIENT_BOUTIQUES
                 AUTH0_B001_CLIENT_ID AUTH0_B001_CLIENT_SECRET AUTH0_B002_CLIENT_ID AUTH0_B002_CLIENT_SECRET
-                AUTH0_B003_CLIENT_ID AUTH0_B003_CLIENT_SECRET POSTGRES_PASSWORD RABBITMQ_USER RABBITMQ_PASSWORD)
+                AUTH0_B003_CLIENT_ID AUTH0_B003_CLIENT_SECRET POSTGRES_PASSWORD RABBITMQ_USER RABBITMQ_PASSWORD
+                MCP_AUDIENCE)
           requis=(AUTH_MODE POSTGRES_PASSWORD RABBITMQ_USER RABBITMQ_PASSWORD)
           if [ "$AUTH_MODE" = auth0 ]; then
             requis+=(AUTH0_DOMAIN AUTH0_AUDIENCE AUTH0_B001_CLIENT_ID AUTH0_B001_CLIENT_SECRET
@@ -174,6 +177,10 @@ jobs:
         run: |
           curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "$API_URL/__health" > /dev/null
           curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "$ERP_URL/health" > /dev/null
+          curl -fsS "$API_URL/docs/" > /dev/null || { echo "::error::$API_URL/docs/ ne répond pas (nginx : location /docs vers 127.0.0.1:8203)"; exit 1; }
+          curl -fsS "$API_URL/.well-known/oauth-protected-resource/mcp" > /dev/null
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API_URL/mcp")
+          [ "$code" = 401 ] || { echo "::error::/mcp accessible sans jeton (HTTP $code)"; exit 1; }
           if [ "$AUTH_MODE" = auth0 ]; then
             code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer dev-B001' "$API_URL/api/v1/produits")
             [ "$code" = 401 ] || { echo "::error::Jeton de démo accepté en production (HTTP $code)"; exit 1; }

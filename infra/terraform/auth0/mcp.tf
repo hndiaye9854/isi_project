@@ -5,7 +5,7 @@
 variable "mcp_audience" {
   description = "Identifiant (audience) de l'API du serveur MCP."
   type        = string
-  default     = "https://mcp.surfwear.example"
+  default     = "https://mcp.surfwear.isi"
 }
 
 resource "auth0_resource_server" "mcp" {
