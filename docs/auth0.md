@@ -10,12 +10,15 @@ Toute la configuration Auth0 est **décrite en code avec Terraform** dans [`infr
 
 | Élément | Détail |
 | --- | --- |
-| API « API Surfwear B2B » | identifiant (audience) `https://api.surfwear.example`, RS256, jetons valables 24 h |
+| API « API Surfwear B2B » | identifiant (audience) : variable `audience`, `https://api.surfwear.isi` par défaut ; RS256, jetons valables 24 h |
+| API « MCP Surfwear B2B » (`mcp.tf`) | audience dédiée du serveur MCP : variable `mcp_audience`, `https://mcp.surfwear.isi` par défaut, mêmes 5 permissions |
 | 5 permissions | `read:catalogue`, `read:commandes`, `write:commandes`, `manage:webhooks`, `read:stats` |
 | Une application par boutique | B001, B002, B003 (liste `boutiques` de `variables.tf`), avec `client_metadata.boutique_id` |
 | Application des commerciaux | `read:catalogue` et `read:stats` |
-| Autorisations (*client grants*) | chaque application sur l'API, avec ses permissions |
+| Autorisations (*client grants*) | chaque application sur l'API et sur l'API MCP, avec ses permissions |
 | Action *credentials-exchange* | ajoute le claim `boutique_id` au jeton à partir des métadonnées de l'application |
+
+L'audience ne peut plus changer une fois l'API créée. Un tenant qui utilise d'autres valeurs (par exemple `https://api.surfwear.example` et `https://mcp.surfwear.example`, celles du mode dev) les indique dans son `terraform.tfvars` (`audience`, `mcp_audience`), et `.env` doit reprendre les mêmes (`AUTH0_AUDIENCE`, `MCP_AUDIENCE`).
 
 Le claim `boutique_id` n'a pas de namespace : Auth0 l'autorise pour une API à soi, et KrakenD le lit tel quel.
 
@@ -57,6 +60,7 @@ docker compose up -d
 ```bash
 bash scripts/jeton.sh B001          # copie le jeton dans le presse-papiers
 bash scripts/jeton.sh COMMERCIAL    # profil commercial
+bash scripts/jeton.sh B001 --mcp    # jeton pour le serveur MCP (audience MCP)
 ```
 
 Collez-le dans le bouton **Authorize** de Swagger UI (http://localhost:8088), ou utilisez-le avec curl :

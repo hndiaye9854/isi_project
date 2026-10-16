@@ -1,6 +1,15 @@
 # Architecture du prototype
 
-Ce document relie le prototype à l'étude technique (questions 5 et 6). Le schéma complet de la solution cible se trouve dans `schema-flux-to-be.excalidraw` (à ouvrir sur excalidraw.com) et `schema-flux-to-be.png`.
+Ce document relie le prototype à l'étude technique (questions 5 et 6).
+
+| Schéma | Contenu |
+| --- | --- |
+| [`schema-flux-to-be.excalidraw`](schema-flux-to-be.excalidraw) et [`.png`](schema-flux-to-be.png) | Solution **cible** de l'étude (y compris EDIFACT et CSV/SFTP, hors prototype) |
+| [`architecture-actuelle.excalidraw`](architecture-actuelle.excalidraw) | Ce qui tourne réellement dans le prototype : réseaux, ports, flux REST, événements, webhooks, MCP |
+| Vue d'ensemble ci-dessous (Mermaid) | Le même prototype, lisible directement sur GitHub |
+| [`services/observatoire/schema/surfwear.architecture.json`](../services/observatoire/schema/surfwear.architecture.json) | Schéma archify de l'observatoire, animé en direct (http://localhost:8070) |
+
+Les fichiers `.excalidraw` s'ouvrent sur excalidraw.com (*Open*) ou avec l'extension Excalidraw de VS Code.
 
 ## Périmètre du prototype
 
@@ -20,13 +29,15 @@ flowchart LR
     B2[Boutique Hossegor<br/>simulateur]
     B3[Boutique Lacanau<br/>simulateur]
   end
-  A0[(Auth0)]
+  IA[Assistant IA<br/>client MCP]
+  A0[(Auth0<br/>ou mock-oauth2 en dev)]
   subgraph Plateforme["Plateforme d'interopérabilité (réseau plateforme)"]
     GW[API Gateway KrakenD<br/>JWT Auth0, droits, quotas]
     CAT[Catalogue et Disponibilité]
     CMD[Commandes et Réservation]
     NOT[Notifications<br/>webhooks + e-mail]
     ANA[Analytics<br/>commerciaux]
+    MCP[Serveur MCP<br/>outils pour l'IA]
     CNX[Connecteur ERP]
     BUS{{Bus d'événements<br/>RabbitMQ}}
     R[(Redis<br/>cache)]
@@ -38,7 +49,10 @@ flowchart LR
   end
   B1 & B2 & B3 -- "client credentials" --> A0
   B1 & B2 & B3 -- "REST + jeton JWT" --> GW
-  GW --> CAT & CMD & NOT & ANA
+  IA -- "client credentials (audience MCP)" --> A0
+  IA -- "/mcp + jeton JWT" --> GW
+  GW --> CAT & CMD & NOT & ANA & MCP
+  MCP -- "REST interne (X-Boutique-Id)" --> CAT & CMD & ANA
   CMD -- "réservation (REST)" --> CNX
   CNX -- "REST" --> ERP
   LOG --> ERP
@@ -48,6 +62,34 @@ flowchart LR
   NOT -- "webhooks signés HMAC" --> B1 & B2 & B3
   CAT --- R
   CMD & NOT & ANA --- PG
+```
+
+## Trajet d'une commande
+
+```mermaid
+sequenceDiagram
+  participant B as Boutique
+  participant A as Auth0
+  participant K as KrakenD
+  participant C as Commandes
+  participant X as Connecteur ERP
+  participant E as ERP
+  participant Q as RabbitMQ
+  participant N as Notifications
+  B->>A: client credentials
+  A-->>B: jeton JWT (boutique_id, permissions)
+  B->>K: POST /api/v1/commandes + Idempotency-Key
+  K->>K: signature, audience, permission write:commandes
+  K->>C: commande + X-Boutique-Id
+  C->>X: POST /reservations
+  X->>E: réservation (SELECT ... FOR UPDATE)
+  E-->>X: quantités réservées (stock puis production)
+  X-->>C: résultat
+  C-->>B: 201 RESERVEE (via KrakenD)
+  C->>Q: CommandeReservee (outbox)
+  Q->>N: livraison de l'événement
+  N->>B: webhook signé HMAC + e-mail
+  Note over E,Q: plus tard, l'expédition : journal ERP → connecteur → CommandeExpediee → webhook avec le bon de livraison
 ```
 
 ## Services
@@ -63,6 +105,9 @@ flowchart LR
 | `erp-connector` | Adaptateur : façade REST vers l'ERP et traduction de son journal de changements en événements | Redis (position de lecture) | StockMisAJour, CommandeExpediee | |
 | `erp-mock` | ERP simulé, avec l'écran du logisticien | PostgreSQL | | |
 | `boutique-simulator` | Logiciel de gestion d'une boutique : commande par API, réception des webhooks, stock local | mémoire | | |
+| `mock-oauth2` | Faux fournisseur OAuth2 du mode `dev` et de la CI : vrais jetons signés, mêmes permissions et claim `boutique_id` qu'Auth0 (`infra/mock-oauth2/config.json`) | aucun | | |
+| `swagger-ui` | Documentation interactive tirée de `docs/openapi.yaml`, qui appelle la passerelle | aucun | | |
+| `observatoire` | Démo animée des flux (profil `demo`) : reçoit les traces de tous les services et pilote la visite guidée | aucun | | traces (`surfwear.traces`) |
 
 ## Choix techniques et problèmes résolus
 
@@ -77,6 +122,15 @@ flowchart LR
 | **P7.** Pas de référentiel commun | Tous les articles sont identifiés par leur code GTIN (EAN-13, standard GS1). |
 | **P8.** Scalabilité humaine | Commandes en libre-service. Le service Analytics donne aux commerciaux les références en tension. |
 | **P9.** Maintenabilité | Monorepo, services indépendants et conteneurisés, journaux JSON structurés, métriques Prometheus, santé (`/health`), tests de bout en bout dans la CI. |
+
+## Deux modes d'authentification
+
+| `AUTH_MODE` | Qui délivre les jetons | Usage |
+| --- | --- | --- |
+| `dev` (par défaut) | `mock-oauth2`, audiences `https://api.surfwear.example` et `https://mcp.surfwear.example` | développement, démonstration, CI |
+| `auth0` | le tenant Auth0, configuré par Terraform (`infra/terraform/auth0`) | production et tests réalistes |
+
+La passerelle KrakenD vérifie les jetons de la même manière dans les deux modes (`auth/validator` : JWKS, émetteur, audience, permissions). Les audiences réelles d'un tenant sont celles de son `terraform.tfvars` (`audience`, `mcp_audience`) ; le tenant de production utilise `https://api.surfwear.isi` et `https://mcp.surfwear.isi` (valeurs par défaut de Terraform et du déploiement).
 
 ## Fiabilité des échanges
 
@@ -98,7 +152,8 @@ Chaque service publie une trace par échange (requête, réponse, événement, w
 - Cloisonnement : l'identifiant de boutique est imposé par la passerelle à partir du claim `boutique_id` du jeton ; un en-tête `X-Boutique-Id` forgé par le client est écrasé par la valeur du jeton (testé dans `scripts/smoke-test.sh`). Les profils sans boutique, comme le commercial, n'ont la permission d'aucune route qui s'appuie sur la boutique. Une boutique ne peut pas lire les commandes d'une autre (réponse 404).
 - Webhooks signés avec un secret propre à chaque abonnement.
 - Trois réseaux Docker séparés (`boutiques`, `plateforme`, `entreprise`).
-- Limitation de débit sur l'API.
+- Limitation de débit sur l'API (300 requêtes par minute et par adresse IP, `qos/ratelimit/router`).
+- Serveur MCP : audience dédiée (un jeton REST est refusé sur `/mcp`, et inversement), outils filtrés par permission, et jamais de réutilisation du jeton reçu (*token passthrough* interdit par la spécification MCP).
 
 ## Passage à la production (hors prototype)
 

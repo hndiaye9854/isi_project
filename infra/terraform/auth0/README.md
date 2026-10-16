@@ -4,11 +4,14 @@ Toute la configuration Auth0 de la plateforme est décrite ici, au lieu d'être 
 
 | Ressource | Rôle |
 | --- | --- |
-| `auth0_resource_server` + `auth0_resource_server_scopes` | API « Surfwear B2B » (`https://api.surfwear.example`) et ses 5 permissions |
+| `auth0_resource_server` + `auth0_resource_server_scopes` | API « Surfwear B2B » (variable `audience`, `https://api.surfwear.isi` par défaut) et ses 5 permissions |
 | `auth0_client` (une par boutique) + `auth0_client_credentials` | Applications machine à machine des boutiques, avec `client_metadata.boutique_id` |
 | `auth0_client_grant` | Autorisation de chaque application sur l'API, avec ses permissions |
 | `auth0_client.commercial` | Application des commerciaux (`read:catalogue`, `read:stats`) |
 | `auth0_action` + `auth0_trigger_actions` | Action *credentials-exchange* qui ajoute le claim `boutique_id` au jeton |
+| `mcp.tf` | API « MCP Surfwear B2B » (variable `mcp_audience`, `https://mcp.surfwear.isi` par défaut), ses permissions et les autorisations des boutiques et du commercial |
+
+Les audiences ne peuvent plus changer une fois les API créées : un tenant qui en utilise d'autres les indique dans `terraform.tfvars` (`audience`, `mcp_audience`).
 
 **Ajouter une boutique** : une ligne dans `boutiques` (`variables.tf`), puis `terraform apply` et `bash scripts/env-depuis-terraform.sh`.
 
