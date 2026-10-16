@@ -11,14 +11,27 @@ DOMAINE=$(lire_tfvar auth0_domain)
 CLIENT_ID=$(lire_tfvar terraform_client_id)
 CLIENT_SECRET=$(lire_tfvar terraform_client_secret)
 AUDIENCE=${AUDIENCE:-https://api.surfwear.example}
-[ -n "$DOMAINE" ] && [ -n "$CLIENT_ID" ] && [ -n "$CLIENT_SECRET" ] || { echo "Compléter terraform.tfvars d'abord"; exit 1; }
+[ -n "$DOMAINE" ] && [ -n "$CLIENT_ID" ] && [ -n "$CLIENT_SECRET" ] || { echo "Compléter terraform.tfvars d'abord (guillemets droits \")"; exit 1; }
+case "$CLIENT_ID$CLIENT_SECRET" in *" "*|*«*|*»*|*“*|*”*)
+  echo "terraform.tfvars contient encore les valeurs d'exemple : coller le Client ID et le Client Secret de l'application"
+  echo "« Terraform » (Auth0 > Applications > Terraform > Settings), puis enregistrer le fichier (Cmd+S)."
+  exit 1;;
+esac
 
 # Correspondance Client ID -> boutique, telle qu'elle était configurée à la main dans le .env du projet.
 CORRESPONDANCE=$(sed -n 's/^AUTH0_CLIENT_BOUTIQUES=//p' ../../../.env 2>/dev/null || true)
 
-JETON=$(curl -fsS -X POST "https://$DOMAINE/oauth/token" -H 'Content-Type: application/json' \
+REPONSE=$(curl -sS -X POST "https://$DOMAINE/oauth/token" -H 'Content-Type: application/json' \
   -d "$(jq -n --arg id "$CLIENT_ID" --arg s "$CLIENT_SECRET" --arg a "https://$DOMAINE/api/v2/" \
-        '{grant_type: "client_credentials", client_id: $id, client_secret: $s, audience: $a}')" | jq -r .access_token)
+        '{grant_type: "client_credentials", client_id: $id, client_secret: $s, audience: $a}')")
+JETON=$(jq -r '.access_token // empty' <<< "$REPONSE" 2>/dev/null || true)
+if [ -z "$JETON" ]; then
+  echo "Auth0 refuse le jeton de l'application Terraform (Client ID $CLIENT_ID, secret de ${#CLIENT_SECRET} caractères) :"
+  echo "  $(jq -r '"\(.error) : \(.error_description)"' <<< "$REPONSE" 2>/dev/null || echo "$REPONSE")"
+  echo "« Unauthorized » : Client ID et secret ne correspondent pas (recopier depuis Applications > Terraform > Settings)."
+  echo "« Client is not authorized » : autoriser l'application sur « Auth0 Management API » (onglet APIs)."
+  exit 1
+fi
 api() { curl -fsS -G "https://$DOMAINE/api/v2/$1" -H "Authorization: Bearer $JETON" "${@:2}"; }
 
 API_ID=$(api resource-servers | jq -r --arg a "$AUDIENCE" '.[] | select(.identifier == $a) | .id')

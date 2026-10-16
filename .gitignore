@@ -8,3 +8,4 @@ node_modules/
 *.tfstate.*
 terraform.tfvars
 imports.auto.tfvars.json
+*.tfplan

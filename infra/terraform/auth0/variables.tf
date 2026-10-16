@@ -27,8 +27,8 @@ variable "boutiques" {
   }))
   default = {
     B001 = { nom = "Boutique Biarritz" }
-    B002 = { nom = "Boutique Hossegor" }
-    B003 = { nom = "Boutique Lacanau" }
+    B002 = { nom = "Boutique Anglet" }
+    B003 = { nom = "Boutique Bayonne" }
   }
 }
 
