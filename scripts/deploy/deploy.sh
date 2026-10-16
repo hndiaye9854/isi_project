@@ -4,9 +4,8 @@
 # Usage : scripts/deploy.sh <namespace-dockerhub> <tag-image>
 #   ex.  : ~/surfwear/scripts/deploy.sh monlogin 1c4fc87...    (rollback : relancer avec un ancien tag)
 #
-# Le .env du VPS n'est jamais écrasé : au premier déploiement il est créé avec des mots de passe
-# aléatoires et AUTH_MODE=dev, à compléter ensuite (Auth0) à la main. Seules les lignes
-# DOCKERHUB_NAMESPACE et IMAGE_TAG sont mises à jour à chaque déploiement.
+# Le .env est généré par le pipeline à partir des secrets GitHub et déposé en .env.new :
+# il remplace alors le .env courant. Lancé à la main sans .env.new, le .env courant est réutilisé.
 set -euo pipefail
 
 NAMESPACE=${1:?namespace DockerHub manquant}
@@ -14,51 +13,21 @@ TAG=${2:?tag de l image manquant}
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 COMPOSE=(docker compose -f "$DIR/docker-compose.prod.yml" --env-file "$DIR/.env")
 cd "$DIR"
+umask 077
 
-# --- .env : création au premier déploiement ---
-if [ ! -f .env ]; then
-  echo ">> Premier déploiement : création de $DIR/.env"
-  aleatoire() { tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32; }
-  umask 077
-  cat > .env <<EOF
-# Généré au premier déploiement. Fichier propre au VPS : jamais écrasé par le pipeline.
-# Passer AUTH_MODE=auth0 et renseigner AUTH0_* (valeurs produites par Terraform, voir infra/terraform/auth0).
-AUTH_MODE=dev
-AUTH0_DOMAIN=
-AUTH0_AUDIENCE=https://api.surfwear.example
-AUTH0_B001_CLIENT_ID=
-AUTH0_B001_CLIENT_SECRET=
-AUTH0_B002_CLIENT_ID=
-AUTH0_B002_CLIENT_SECRET=
-AUTH0_B003_CLIENT_ID=
-AUTH0_B003_CLIENT_SECRET=
-AUTH0_COMMERCIAL_CLIENT_ID=
-AUTH0_COMMERCIAL_CLIENT_SECRET=
-
-POSTGRES_PASSWORD=$(aleatoire)
-RABBITMQ_USER=surfwear
-RABBITMQ_PASSWORD=$(aleatoire)
-GRAFANA_PASSWORD=$(aleatoire)
-
-# Ports locaux (127.0.0.1) à adapter si déjà pris sur le VPS
-GATEWAY_PORT=8201
-ERP_PORT=8202
-BOUTIQUE_1_PORT=7001
-BOUTIQUE_2_PORT=7002
-BOUTIQUE_3_PORT=7003
-MAILPIT_PORT=8025
-RABBITMQ_CONSOLE_PORT=15672
-
-# Mis à jour par le pipeline
-DOCKERHUB_NAMESPACE=
-IMAGE_TAG=latest
-EOF
-  echo "!! AUTH_MODE=dev : jetons de démonstration acceptés. Configurer Auth0 dans $DIR/.env."
+# --- .env : celui du pipeline s'il y en a un nouveau ---
+ANCIEN_TAG=$( [ -f .env ] && sed -n 's/^IMAGE_TAG=//p' .env || true )
+if [ -f .env.new ]; then
+  mv -f .env.new .env
+  echo ">> .env du pipeline appliqué"
+elif [ ! -f .env ]; then
+  echo "!! Aucun $DIR/.env : lancer le workflow Deploy depuis GitHub." >&2
+  exit 1
+else
+  echo ">> Aucun .env.new : le .env existant est réutilisé"
 fi
 chmod 600 .env
 
-# --- Image à déployer (on garde la précédente pour un éventuel rollback) ---
-ANCIEN_TAG=$(sed -n 's/^IMAGE_TAG=//p' .env)
 majvar() { grep -q "^$1=" .env && sed -i "s|^$1=.*|$1=$2|" .env || echo "$1=$2" >> .env; }
 majvar DOCKERHUB_NAMESPACE "$NAMESPACE"
 majvar IMAGE_TAG "$TAG"
@@ -67,6 +36,20 @@ majvar PREVIOUS_IMAGE_TAG "${ANCIEN_TAG:-latest}"
 echo ">> Déploiement de $NAMESPACE/surfwear-*:$TAG (précédent : ${ANCIEN_TAG:-aucun})"
 "${COMPOSE[@]}" config --quiet
 "${COMPOSE[@]}" pull --quiet
+
+# --- Infrastructure d'abord, puis alignement des mots de passe ---
+# Postgres et RabbitMQ ne lisent leurs identifiants qu'à la création du volume : si les secrets
+# changent ensuite, on les applique explicitement (idempotent).
+"${COMPOSE[@]}" up -d --wait --wait-timeout 180 postgres rabbitmq redis
+printf '%s\n' "ALTER USER postgres PASSWORD :'pw';" \
+  | "${COMPOSE[@]}" exec -T postgres sh -c 'psql -q -v ON_ERROR_STOP=1 -U postgres -v pw="$POSTGRES_PASSWORD"'
+"${COMPOSE[@]}" exec -T rabbitmq sh -c '
+  u="$RABBITMQ_DEFAULT_USER"; p="$RABBITMQ_DEFAULT_PASS"
+  rabbitmqctl -q add_user "$u" "$p" 2> /dev/null || true
+  rabbitmqctl -q change_password "$u" "$p"
+  rabbitmqctl -q set_user_tags "$u" administrator
+  rabbitmqctl -q set_permissions -p / "$u" ".*" ".*" ".*"' > /dev/null
+echo ">> Identifiants Postgres et RabbitMQ alignés sur le .env"
 
 # --wait : échoue si un service n'est pas « healthy » dans le délai.
 if ! "${COMPOSE[@]}" up -d --remove-orphans --wait --wait-timeout 300; then

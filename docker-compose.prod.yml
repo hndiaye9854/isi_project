@@ -67,6 +67,7 @@ services:
 
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
+    hostname: rabbitmq   # nom de nœud stable : files et utilisateurs conservés entre deux recréations
     restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?RABBITMQ_USER manquant}
@@ -163,6 +164,7 @@ services:
     image: ${DOCKERHUB_NAMESPACE}/surfwear-gateway:${IMAGE_TAG:-latest}
     environment:
       <<: *auth-env
+      TRUST_PROXY: ${TRUST_PROXY:-2}   # Cloudflare puis nginx devant la passerelle : quota sur l'IP réelle du client
     depends_on:
       catalogue: { condition: service_healthy }
       commandes: { condition: service_healthy }
@@ -174,12 +176,13 @@ services:
     logging: *logging
     networks: [plateforme, boutiques]
 
-  # Documentation interactive (Swagger UI), à publier par nginx si besoin.
+  # Documentation interactive (Swagger UI) : nginx publie /docs vers ce conteneur.
   swagger-ui:
     image: swaggerapi/swagger-ui:v5.17.14
     restart: unless-stopped
     environment:
       SWAGGER_JSON: /openapi/openapi.yaml
+      BASE_URL: /docs          # servi par nginx sous https://<domaine>/docs
     volumes: [./docs/openapi.yaml:/openapi/openapi.yaml:ro]
     ports: ["127.0.0.1:${DOCS_PORT:-8203}:8080"]
     logging: *logging
@@ -227,15 +230,15 @@ services:
       AUTH0_CLIENT_SECRET: ${AUTH0_B002_CLIENT_SECRET:-}
     ports: ["127.0.0.1:${BOUTIQUE_2_PORT:-7002}:7000"]
 
-  boutique-lacanau:
+  boutique-bayonne:
     <<: *boutique
     environment:
       <<: *auth-env
       PORT: 7000
       GATEWAY_URL: http://gateway:8080
       BOUTIQUE_ID: B003
-      BOUTIQUE_NOM: Surf Shop Lacanau
-      PUBLIC_URL: http://boutique-lacanau:7000
+      BOUTIQUE_NOM: Surf Shop Bayonne
+      PUBLIC_URL: http://boutique-bayonne:7000
       AUTH0_CLIENT_ID: ${AUTH0_B003_CLIENT_ID:-}
       AUTH0_CLIENT_SECRET: ${AUTH0_B003_CLIENT_SECRET:-}
     ports: ["127.0.0.1:${BOUTIQUE_3_PORT:-7003}:7000"]
@@ -256,7 +259,7 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-surfwear}
     volumes: [./infra/grafana/provisioning:/etc/grafana/provisioning:ro]
-    ports: ["127.0.0.1:${GRAFANA_PORT:-3000}:3000"]
+    ports: ["127.0.0.1:${GRAFANA_PORT:-3010}:3000"]
     networks: [plateforme]
 
 networks:

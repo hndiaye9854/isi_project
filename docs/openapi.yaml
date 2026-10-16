@@ -17,6 +17,8 @@ info:
 servers:
   - url: http://localhost:8080
     description: Environnement local (docker compose)
+  - url: https://isi.hamidnd.me
+    description: Production
 tags:
   - name: Catalogue
     description: Articles, stock réel et stock potentiel
