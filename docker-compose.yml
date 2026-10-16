@@ -82,6 +82,7 @@ services:
       <<: *common-env
       PORT: 8090
       ERP_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-surfwear}@postgres:5432/erp
+      TRACES: "off"            # réseau isolé : pas d'accès au bus (ses échanges sont tracés par le connecteur)
     depends_on:
       postgres: { condition: service_healthy }
     ports: ["8090:8090"]     # poste logisticien : http://localhost:8090/logistique/
@@ -148,23 +149,42 @@ services:
       ANALYTICS_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-surfwear}@postgres:5432/analytics
     healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8084/health"], interval: 10s, timeout: 3s, retries: 10 }
 
+  # Passerelle d'API : KrakenD CE. Routes et permissions dans infra/krakend/settings/routes.json.
   gateway:
-    <<: *node-service
-    build: { context: ., dockerfile: Dockerfile, args: { SERVICE_PATH: services/gateway } }
-    image: surfwear/gateway:1.0.0
+    restart: unless-stopped
+    build: { context: infra/krakend }
+    image: surfwear/gateway:2.0.0
     environment:
-      <<: [*common-env, *auth-env]
-      PORT: 8080
-      OPENAPI_PATH: /app/docs/openapi.yaml
-      AUTH0_CLAIM_NAMESPACE: ${AUTH0_CLAIM_NAMESPACE:-https://surfwear.example/}
-      AUTH0_CLIENT_BOUTIQUES: ${AUTH0_CLIENT_BOUTIQUES:-}
+      <<: *auth-env
     depends_on:
       catalogue: { condition: service_healthy }
       commandes: { condition: service_healthy }
       notifications: { condition: service_healthy }
       analytics: { condition: service_healthy }
-    ports: ["8080:8080"]     # API publique + documentation : http://localhost:8080/docs
-    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"], interval: 10s, timeout: 3s, retries: 10 }
+      mock-oauth2: { condition: service_started }
+    ports: ["8080:8080"]     # API publique : http://localhost:8080/api/v1/...
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8080/__health"], interval: 10s, timeout: 3s, retries: 10 }
+    networks: [plateforme, boutiques]
+
+  # Documentation interactive de l'API (Swagger UI), qui appelle la passerelle.
+  swagger-ui:
+    image: swaggerapi/swagger-ui:v5.17.14
+    restart: unless-stopped
+    environment:
+      SWAGGER_JSON: /openapi/openapi.yaml
+      DOC_EXPANSION: list
+    volumes: [./docs/openapi.yaml:/openapi/openapi.yaml:ro]
+    ports: ["8088:8080"]     # http://localhost:8088
+    networks: [boutiques]
+
+  # Faux fournisseur OAuth2 (AUTH_MODE=dev et CI) : délivre de vrais JWT signés, comme Auth0, sans compte.
+  mock-oauth2:
+    image: ghcr.io/navikt/mock-oauth2-server:6.0.8
+    restart: unless-stopped
+    environment:
+      JSON_CONFIG_PATH: /config/config.json
+    volumes: [./infra/mock-oauth2/config.json:/config/config.json:ro]
+    ports: ["8099:8080"]     # jetons de test : bash scripts/jeton.sh B001
     networks: [plateforme, boutiques]
 
   # ---------------- Boutiques clientes (simulées) ----------------
@@ -211,6 +231,25 @@ services:
       AUTH0_CLIENT_ID: ${AUTH0_B003_CLIENT_ID:-}
       AUTH0_CLIENT_SECRET: ${AUTH0_B003_CLIENT_SECRET:-}
     ports: ["7003:7000"]
+
+  # ---------------- Démo animée des flux (optionnelle) ----------------
+  # docker compose --profile demo up -d --build   puis   http://localhost:8070
+  # Relié aux trois réseaux pour piloter les boutiques et l'ERP : outil de démonstration, jamais en production.
+  observatoire:
+    <<: *node-service
+    profiles: [demo]
+    build: { context: ., dockerfile: Dockerfile, args: { SERVICE_PATH: services/observatoire } }
+    image: surfwear/observatoire:1.0.0
+    environment:
+      <<: *common-env
+      PORT: 8070
+      ERP_URL: http://erp-mock:8090
+    depends_on:
+      <<: *infra-ready
+      gateway: { condition: service_healthy }
+    ports: ["8070:8070"]
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8070/health"], interval: 10s, timeout: 3s, retries: 10 }
+    networks: [plateforme, boutiques, entreprise]
 
   # ---------------- Supervision (optionnelle) ----------------
   prometheus:

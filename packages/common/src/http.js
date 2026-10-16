@@ -2,6 +2,7 @@ import express from 'express';
 import pinoHttp from 'pino-http';
 import client from 'prom-client';
 import { randomUUID } from 'node:crypto';
+import { initTraces, serviceCourant, tracer } from './traces.js';
 
 export class HttpError extends Error {
   constructor(status, message, details) {
@@ -14,6 +15,7 @@ export class HttpError extends Error {
 /** Application Express avec journalisation, santé, métriques et gestion d'erreurs. */
 export function createApp({ service, logger, rawBody = false }) {
   const app = express();
+  initTraces({ service, logger });
   client.collectDefaultMetrics({ labels: { service } });
   const httpDuration = new client.Histogram({
     name: 'http_request_duration_seconds',
@@ -39,6 +41,22 @@ export function createApp({ service, logger, rawBody = false }) {
     res.on('finish', () => end({ service, method: req.method, route: req.route?.path || req.path, status: res.statusCode }));
     next();
   });
+  // Requête relayée par la passerelle KrakenD (seule à poser X-Sujet, tiré du jeton) : on trace les deux étapes
+  // appelant → passerelle → service pour l'observatoire, KrakenD ne publiant rien lui-même.
+  app.use((req, res, next) => {
+    if (!req.headers['x-sujet']) return next();
+    const appelant = req.headers['x-appelant'] || 'navigateur';
+    const debut = Date.now();
+    const chemin = req.path;
+    tracer({ type: 'requete', de: appelant, vers: 'gateway', methode: req.method, chemin: `/api/v1${chemin}`, t: debut });
+    tracer({ type: 'requete', de: 'gateway', vers: service, methode: req.method, chemin, t: debut + 1 });
+    res.on('finish', () => {
+      const fin = Date.now();
+      tracer({ type: 'reponse', de: service, vers: 'gateway', statut: res.statusCode, duree: fin - debut, t: fin });
+      tracer({ type: 'reponse', de: 'gateway', vers: appelant, statut: res.statusCode, t: fin + 1 });
+    });
+    next();
+  });
   app.get('/health', (_req, res) => res.json({ status: 'ok', service }));
   app.get('/metrics', async (_req, res) => {
     res.set('Content-Type', client.register.contentType);
@@ -61,14 +79,28 @@ export function finalizeApp(app, logger) {
 /** Encapsule une route asynchrone pour transmettre les erreurs à Express. */
 export const route = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
-/** Appel HTTP JSON avec délai maximal. */
-export async function fetchJson(url, { method = 'GET', body, headers = {}, timeoutMs = 3000 } = {}) {
-  const res = await fetch(url, {
-    method,
-    headers: { 'Content-Type': 'application/json', ...headers },
-    body: body ? JSON.stringify(body) : undefined,
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+/**
+ * Appel HTTP JSON avec délai maximal.
+ * La requête et la réponse sont tracées pour l'observatoire (trace: false pour un appel répétitif, de: pour nommer l'appelant).
+ */
+export async function fetchJson(url, { method = 'GET', body, headers = {}, timeoutMs = 3000, trace = true, de } = {}) {
+  const { hostname, pathname } = new URL(url);
+  const appelant = de || serviceCourant();
+  const debut = Date.now();
+  if (trace) tracer({ type: 'requete', de: appelant, vers: hostname, methode: method, chemin: pathname });
+  let res;
+  try {
+    res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', 'X-Appelant': appelant || '', ...headers },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (err) {
+    if (trace) tracer({ type: 'reponse', de: hostname, vers: appelant, statut: 'injoignable', duree: Date.now() - debut });
+    throw err;
+  }
+  if (trace) tracer({ type: 'reponse', de: hostname, vers: appelant, statut: res.status, duree: Date.now() - debut });
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) throw new HttpError(res.status, data?.erreur || `Erreur HTTP ${res.status}`, data);

@@ -1,0 +1,403 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Surfwear Interop · flux en direct",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1300,
+      860
+    ]
+  },
+  "components": [
+    {
+      "id": "observatoire",
+      "type": "external",
+      "label": "Vous",
+      "sublabel": "pilote de la démo",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "boutique-biarritz",
+      "type": "frontend",
+      "label": "Boutique Biarritz",
+      "sublabel": "B001 · :7001",
+      "pos": [
+        40,
+        170
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "boutique-hossegor",
+      "type": "frontend",
+      "label": "Boutique Hossegor",
+      "sublabel": "B002 · :7002",
+      "pos": [
+        40,
+        290
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "boutique-lacanau",
+      "type": "frontend",
+      "label": "Boutique Lacanau",
+      "sublabel": "B003 · :7003",
+      "pos": [
+        40,
+        410
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "navigateur",
+      "type": "frontend",
+      "label": "Navigateur",
+      "sublabel": "Swagger UI",
+      "pos": [
+        40,
+        600
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "auth0",
+      "type": "security",
+      "label": "Auth0",
+      "sublabel": "ou mock-oauth2 en dev",
+      "pos": [
+        300,
+        40
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "gateway",
+      "type": "security",
+      "label": "Passerelle KrakenD",
+      "sublabel": "JWT · scopes · quotas",
+      "pos": [
+        300,
+        290
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "catalogue",
+      "type": "backend",
+      "label": "Catalogue",
+      "sublabel": "cache Redis",
+      "brand": "redis",
+      "pos": [
+        560,
+        290
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "commandes",
+      "type": "backend",
+      "label": "Commandes",
+      "sublabel": "PostgreSQL · outbox",
+      "brand": "postgresql",
+      "pos": [
+        560,
+        150
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "analytics",
+      "type": "backend",
+      "label": "Analytics",
+      "sublabel": "statistiques",
+      "brand": "postgresql",
+      "pos": [
+        560,
+        430
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "notifications",
+      "type": "backend",
+      "label": "Notifications",
+      "sublabel": "webhooks · e-mails",
+      "pos": [
+        560,
+        570
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "mailpit",
+      "type": "external",
+      "label": "Mailpit",
+      "sublabel": "e-mails de test",
+      "pos": [
+        560,
+        760
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "rabbitmq",
+      "type": "messagebus",
+      "label": "RabbitMQ",
+      "sublabel": "bus CloudEvents",
+      "brand": "rabbitmq",
+      "pos": [
+        830,
+        350
+      ],
+      "size": [
+        150,
+        90
+      ]
+    },
+    {
+      "id": "erp-connector",
+      "type": "backend",
+      "label": "Connecteur ERP",
+      "sublabel": "REST + journal",
+      "pos": [
+        830,
+        40
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "logisticien",
+      "type": "frontend",
+      "label": "Logisticien",
+      "sublabel": "écran :8090",
+      "pos": [
+        1100,
+        200
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "erp-mock",
+      "type": "database",
+      "label": "ERP simulé",
+      "sublabel": "stock · journal",
+      "brand": "postgresql",
+      "pos": [
+        1100,
+        40
+      ],
+      "size": [
+        150,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Réseau boutiques",
+      "wraps": [
+        "boutique-biarritz",
+        "boutique-hossegor",
+        "boutique-lacanau",
+        "navigateur"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Réseau plateforme",
+      "wraps": [
+        "gateway",
+        "catalogue",
+        "commandes",
+        "analytics",
+        "notifications",
+        "mailpit",
+        "rabbitmq",
+        "erp-connector"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "Réseau entreprise (isolé)",
+      "wraps": [
+        "logisticien",
+        "erp-mock"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "pilote",
+      "from": "observatoire",
+      "to": "boutique-biarritz",
+      "label": "action",
+      "variant": "dashed",
+      "labelAt": [
+        115,
+        137
+      ]
+    },
+    {
+      "id": "b1-gw",
+      "from": "boutique-biarritz",
+      "to": "gateway",
+      "label": "REST · JWT",
+      "variant": "emphasis"
+    },
+    {
+      "id": "b2-gw",
+      "from": "boutique-hossegor",
+      "to": "gateway"
+    },
+    {
+      "id": "b3-gw",
+      "from": "boutique-lacanau",
+      "to": "gateway"
+    },
+    {
+      "id": "nav-gw",
+      "from": "navigateur",
+      "to": "gateway",
+      "label": "Try it out"
+    },
+    {
+      "id": "gw-auth0",
+      "from": "gateway",
+      "to": "auth0",
+      "label": "JWKS",
+      "variant": "dashed"
+    },
+    {
+      "id": "gw-cat",
+      "from": "gateway",
+      "to": "catalogue"
+    },
+    {
+      "id": "gw-cmd",
+      "from": "gateway",
+      "to": "commandes",
+      "label": "proxy"
+    },
+    {
+      "id": "gw-ana",
+      "from": "gateway",
+      "to": "analytics"
+    },
+    {
+      "id": "gw-notif",
+      "from": "gateway",
+      "to": "notifications"
+    },
+    {
+      "id": "bus-cat",
+      "from": "rabbitmq",
+      "to": "catalogue"
+    },
+    {
+      "id": "cmd-bus",
+      "from": "commandes",
+      "to": "rabbitmq",
+      "label": "outbox"
+    },
+    {
+      "id": "bus-ana",
+      "from": "rabbitmq",
+      "to": "analytics"
+    },
+    {
+      "id": "bus-notif",
+      "from": "rabbitmq",
+      "to": "notifications"
+    },
+    {
+      "id": "cmd-conn",
+      "from": "commandes",
+      "to": "erp-connector",
+      "label": "POST /reservations",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "left"
+    },
+    {
+      "id": "conn-bus",
+      "from": "erp-connector",
+      "to": "rabbitmq",
+      "label": "événements ERP",
+      "labelAt": [
+        905,
+        132
+      ]
+    },
+    {
+      "id": "conn-erp",
+      "from": "erp-connector",
+      "to": "erp-mock",
+      "label": "REST · journal"
+    },
+    {
+      "id": "logi-erp",
+      "from": "logisticien",
+      "to": "erp-mock",
+      "label": "expédie"
+    },
+    {
+      "id": "notif-mail",
+      "from": "notifications",
+      "to": "mailpit",
+      "label": "SMTP",
+      "labelAt": [
+        635,
+        697
+      ]
+    }
+  ]
+}

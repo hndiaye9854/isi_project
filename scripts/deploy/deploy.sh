@@ -22,18 +22,18 @@ if [ ! -f .env ]; then
   umask 077
   cat > .env <<EOF
 # Généré au premier déploiement. Fichier propre au VPS : jamais écrasé par le pipeline.
-# Passer AUTH_MODE=auth0 et renseigner AUTH0_* (voir docs/auth0.md) pour une vraie production.
+# Passer AUTH_MODE=auth0 et renseigner AUTH0_* (valeurs produites par Terraform, voir infra/terraform/auth0).
 AUTH_MODE=dev
 AUTH0_DOMAIN=
-AUTH0_AUDIENCE=
-AUTH0_CLAIM_NAMESPACE=https://surfwear.example/
-AUTH0_CLIENT_BOUTIQUES=
+AUTH0_AUDIENCE=https://api.surfwear.example
 AUTH0_B001_CLIENT_ID=
 AUTH0_B001_CLIENT_SECRET=
 AUTH0_B002_CLIENT_ID=
 AUTH0_B002_CLIENT_SECRET=
 AUTH0_B003_CLIENT_ID=
 AUTH0_B003_CLIENT_SECRET=
+AUTH0_COMMERCIAL_CLIENT_ID=
+AUTH0_COMMERCIAL_CLIENT_SECRET=
 
 POSTGRES_PASSWORD=$(aleatoire)
 RABBITMQ_USER=surfwear
@@ -79,8 +79,8 @@ fi
 
 # Vérification HTTP de la passerelle, comme le ferait le reverse proxy.
 PORT=$(sed -n 's/^GATEWAY_PORT=//p' .env); PORT=${PORT:-8201}
-if command -v curl > /dev/null; then curl -fsS "http://127.0.0.1:$PORT/health" > /dev/null
-else wget -qO /dev/null "http://127.0.0.1:$PORT/health"; fi
+if command -v curl > /dev/null; then curl -fsS "http://127.0.0.1:$PORT/__health" > /dev/null
+else wget -qO /dev/null "http://127.0.0.1:$PORT/__health"; fi
 echo ">> Passerelle OK sur 127.0.0.1:$PORT"
 
 "${COMPOSE[@]}" ps

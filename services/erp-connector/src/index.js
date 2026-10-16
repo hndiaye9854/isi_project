@@ -1,6 +1,6 @@
 import Redis from 'ioredis';
 import {
-  createLogger, createApp, finalizeApp, connectBus, env, envInt, route, fetchJson, sleep, EVENTS,
+  createLogger, createApp, finalizeApp, connectBus, env, envInt, route, fetchJson, sleep, EVENTS, tracer,
 } from '@surfwear/common';
 
 /**
@@ -38,7 +38,11 @@ async function boucle() {
   for (;;) {
     try {
       const depuis = Number(await redis.get(OFFSET_KEY) || 0);
-      const changements = await fetchJson(`${ERP}/changements?depuis=${depuis}&limite=100`);
+      // Lecture répétée chaque seconde : seule une lecture qui ramène des changements est tracée.
+      const changements = await fetchJson(`${ERP}/changements?depuis=${depuis}&limite=100`, { trace: false });
+      if (changements.length) {
+        tracer({ type: 'journal', de: 'erp-mock', vers: SERVICE, nombre: changements.length, types: [...new Set(changements.map((c) => c.type))] });
+      }
       for (const c of changements) {
         const type = TRADUCTION[c.type];
         // L'identifiant de l'événement est dérivé du numéro de changement : les consommateurs peuvent dédoublonner.

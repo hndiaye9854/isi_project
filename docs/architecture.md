@@ -22,7 +22,7 @@ flowchart LR
   end
   A0[(Auth0)]
   subgraph Plateforme["Plateforme d'interopérabilité (réseau plateforme)"]
-    GW[API Gateway<br/>JWT Auth0, droits, quotas]
+    GW[API Gateway KrakenD<br/>JWT Auth0, droits, quotas]
     CAT[Catalogue et Disponibilité]
     CMD[Commandes et Réservation]
     NOT[Notifications<br/>webhooks + e-mail]
@@ -54,7 +54,7 @@ flowchart LR
 
 | Service | Rôle | Stockage | Publie | Consomme |
 | --- | --- | --- | --- | --- |
-| `gateway` | Point d'entrée unique, vérification des jetons Auth0, contrôle des permissions, injection de l'identité de la boutique, limitation de débit, documentation OpenAPI | aucun | | |
+| `gateway` | **KrakenD CE** : point d'entrée unique, vérification des jetons (JWKS), contrôle des permissions par route, injection de l'identité de la boutique (`propagate_claims`), limitation de débit. Routes déclarées dans `infra/krakend/settings/routes.json` | aucun | | |
 | `catalogue` | Catalogue, stock réel et potentiel, calcul de délai pour une quantité | Redis | | StockMisAJour |
 | `commandes` | Création des commandes, réservation immédiate dans l'ERP, suivi, reprise si l'ERP est indisponible | PostgreSQL | CommandeCreee, CommandeReservee | CommandeExpediee |
 | `notifications` | Abonnements des boutiques, webhooks signés avec nouvelles tentatives, e-mails | PostgreSQL | | CommandeReservee, CommandeExpediee |
@@ -85,11 +85,16 @@ flowchart LR
 - **Journal de changements de l'ERP sans trou** : le connecteur relit le journal à partir du dernier numéro lu. Les écritures dans le journal sont sérialisées par un verrou PostgreSQL gardé jusqu'à la validation, pour que les numéros suivent l'ordre des validations et qu'aucun changement ne soit sauté.
 - **Dédoublonnage** : chaque événement a un identifiant unique, utilisé par les consommateurs (Analytics, simulateurs de boutique).
 
+## Observabilité des échanges (démo)
+
+Chaque service publie une trace par échange (requête, réponse, événement, webhook, e-mail, nouvel essai, file d'erreurs) sur l'échange RabbitMQ `surfwear.traces`, de type *fanout* et non durable : sans observateur branché, les traces sont jetées. Le service `observatoire` (profil `demo`) les remet dans l'ordre chronologique et les diffuse au navigateur, qui anime les flux sur le schéma d'architecture. L'ERP, isolé, ne publie rien : ses échanges sont tracés par le connecteur.
+
 ## Sécurité
 
-- Jetons JWT Auth0 vérifiés par la passerelle : signature RS256, émetteur, audience et expiration.
+- Jetons JWT Auth0 vérifiés par la passerelle KrakenD : signature RS256 (clés publiques JWKS, mises en cache), émetteur, audience et expiration.
+- Configuration Auth0 décrite en code (Terraform, `infra/terraform/auth0`) : API, permissions, applications, autorisations et Action, reproductibles et revues comme du code.
 - Contrôle par permission : une boutique peut commander, un commercial peut consulter les statistiques, et pas l'inverse.
-- Cloisonnement : l'identifiant de boutique est imposé par la passerelle à partir du jeton. Une boutique ne peut pas lire les commandes d'une autre (réponse 404).
+- Cloisonnement : l'identifiant de boutique est imposé par la passerelle à partir du claim `boutique_id` du jeton ; un en-tête `X-Boutique-Id` forgé par le client est écrasé par la valeur du jeton (testé dans `scripts/smoke-test.sh`). Les profils sans boutique, comme le commercial, n'ont la permission d'aucune route qui s'appuie sur la boutique. Une boutique ne peut pas lire les commandes d'une autre (réponse 404).
 - Webhooks signés avec un secret propre à chaque abonnement.
 - Trois réseaux Docker séparés (`boutiques`, `plateforme`, `entreprise`).
 - Limitation de débit sur l'API.

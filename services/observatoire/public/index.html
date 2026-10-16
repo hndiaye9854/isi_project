@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Observatoire des flux</title>
+<style>
+  :root {
+    --fond: #f7f7f4; --carte: #ffffff; --texte: #222; --doux: #6b6b68; --bord: #dcdcd6;
+    --olive: #8A950E; --olive-fond: #f6f7ea; --orange: #e67700; --orange-fond: #fff9db;
+    --violet: #5f3dc4; --violet-fond: #f3f0ff; --teal: #0c8599; --teal-fond: #e3fafc;
+    --requete: #1c7ed6; --ok: #2f9e44; --ko: #e03131; --evt: #8A950E; --webhook: #c2255c;
+    --mail: #e67700; --journal: #7048e8; --retry: #f59f00; --dlq: #c92a2a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fond: #17181a; --carte: #222428; --texte: #e9e9e6; --doux: #a3a39e; --bord: #3a3c40;
+      --olive-fond: #262a14; --orange-fond: #2e2410; --violet-fond: #221d38; --teal-fond: #10292d; --evt: #b3c02a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--fond); color: var(--texte); }
+  header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--bord); background: var(--carte); flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  header .sous { color: var(--doux); font-size: 13px; }
+  .pastille { margin-left: auto; font-size: 13px; padding: 3px 10px; border-radius: 999px; background: var(--fond); border: 1px solid var(--bord); }
+  .pastille.ok::before { content: "● "; color: var(--ok); }
+  .pastille.ko::before { content: "● "; color: var(--ko); }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 16px; padding: 16px 20px; }
+  @media (max-width: 1100px) { main { grid-template-columns: 1fr; } }
+  .carte { background: var(--carte); border: 1px solid var(--bord); border-radius: 12px; }
+  #scene { padding: 0; }
+  #schema { width: 100%; height: 760px; border: 0; display: block; border-radius: 12px 12px 0 0; background: var(--carte); }
+  #narration { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--bord); min-height: 54px; font-size: 16px; }
+  #narration .point { width: 12px; height: 12px; border-radius: 50%; flex: none; background: var(--bord); }
+  .controles { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-top: 1px solid var(--bord); flex-wrap: wrap; font-size: 13px; color: var(--doux); }
+  .legende { display: flex; gap: 14px; flex-wrap: wrap; }
+  .legende span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; background: var(--c); }
+  button { font: inherit; border: 1px solid var(--bord); background: var(--carte); color: var(--texte); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  button:hover { border-color: var(--doux); }
+  button.principal { background: var(--olive); border-color: var(--olive); color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  select, input { font: inherit; padding: 5px 8px; border: 1px solid var(--bord); border-radius: 8px; background: var(--carte); color: var(--texte); }
+  aside { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  aside h2 { font-size: 15px; margin: 0; padding: 12px 16px; border-bottom: 1px solid var(--bord); }
+  .etape { padding: 12px 16px; border-bottom: 1px solid var(--bord); }
+  .etape:last-child { border-bottom: 0; }
+  .etape .tete { display: flex; align-items: center; gap: 10px; }
+  .etape .num { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--olive-fond); color: var(--olive); flex: none; }
+  .etape.faite .num { background: var(--ok); color: #fff; }
+  .etape .nom { font-weight: 600; flex: 1; }
+  .etape p { margin: 6px 0 0 34px; color: var(--doux); font-size: 13.5px; }
+  .etape .resultat { margin: 6px 0 0 34px; font-size: 13px; white-space: pre-line; }
+  .etape .resultat.erreur { color: var(--ko); }
+  .libre { padding: 12px 16px; display: grid; gap: 8px; }
+  .libre .ligne { display: flex; gap: 8px; flex-wrap: wrap; }
+  #journal { list-style: none; margin: 0; padding: 4px 0; max-height: 330px; overflow-y: auto; font-size: 12.5px; }
+  #journal li { display: flex; gap: 8px; padding: 4px 16px; align-items: baseline; }
+  #journal .h { color: var(--doux); font-variant-numeric: tabular-nums; flex: none; }
+  #journal .p { width: 8px; height: 8px; border-radius: 50%; flex: none; transform: translateY(-1px); }
+  .vide { color: var(--doux); padding: 8px 16px; font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Observatoire des flux</h1>
+  <span class="sous">Surfwear Interop · chaque paquet animé est un vrai échange entre les composants, capté en direct</span>
+  <span id="connexion" class="pastille ko">Connexion…</span>
+</header>
+<main>
+  <section class="carte">
+    <div id="scene"><iframe id="schema" src="schema.html" title="Schéma d'architecture animé (rendu archify)"></iframe></div>
+    <div id="narration"><span class="point"></span><span id="phrase">En attente d'une action : lancez une étape de la visite guidée, ou utilisez Swagger.</span></div>
+    <div class="controles">
+      <label>Vitesse <select id="vitesse"><option value="0.5">× 0,5</option><option value="1" selected>× 1</option><option value="2">× 2</option><option value="4">× 4</option></select></label>
+      <button id="pause">Pause</button>
+      <button id="vider">Effacer</button>
+      <span id="attente"></span>
+      <span class="legende">
+        <span style="--c: var(--requete)">requête</span><span style="--c: var(--ok)">réponse</span>
+        <span style="--c: var(--evt)">événement</span><span style="--c: var(--webhook)">webhook</span>
+        <span style="--c: var(--mail)">e-mail</span><span style="--c: var(--journal)">journal ERP</span>
+        <span style="--c: var(--retry)">nouvel essai</span><span style="--c: var(--dlq)">erreur</span>
+      </span>
+    </div>
+  </section>
+  <aside>
+    <section class="carte">
+      <h2>Visite guidée</h2>
+      <div id="etapes"></div>
+    </section>
+    <section class="carte">
+      <h2>Mode libre</h2>
+      <div class="libre">
+        <div class="ligne">
+          <select id="l-boutique"><option value="biarritz">Biarritz</option><option value="hossegor">Hossegor</option><option value="lacanau">Lacanau</option></select>
+          <select id="l-article" style="flex:1; min-width: 0"></select>
+          <input id="l-qte" type="number" min="1" max="500" value="2" style="width: 70px" aria-label="Quantité">
+        </div>
+        <div class="ligne">
+          <button class="principal" id="l-commander">Commander</button>
+          <button id="l-expedier">Expédier</button>
+          <button id="l-recevoir">Réceptionner un lot</button>
+        </div>
+        <div id="l-resultat" class="vide">Les appels faits dans Swagger (localhost:8088) s'affichent aussi ici.</div>
+      </div>
+    </section>
+    <section class="carte">
+      <h2>Journal des échanges</h2>
+      <ul id="journal"><li class="vide">Rien pour le moment.</li></ul>
+    </section>
+  </aside>
+</main>
+<script>
+const NS = 'http://www.w3.org/2000/svg';
+const NOMS = {
+  observatoire: 'Vous (démo)', 'boutique-biarritz': 'Boutique Biarritz', 'boutique-hossegor': 'Boutique Hossegor',
+  'boutique-lacanau': 'Boutique Lacanau', navigateur: 'Navigateur', gateway: "Passerelle d'API", catalogue: 'Catalogue',
+  commandes: 'Commandes', notifications: 'Notifications', analytics: 'Analytics', mailpit: 'Mailpit',
+  rabbitmq: 'le bus RabbitMQ', 'erp-connector': 'Connecteur ERP', logisticien: 'Logisticien', 'erp-mock': "l'ERP",
+};
+const nom = (id) => NOMS[id] || id;
+
+// Itinéraires absents du schéma archify (coordonnées du schéma) : webhooks vers chaque boutique, pilotage de la démo...
+const DETOURS = {
+  'notifications>boutique-biarritz': [[560, 618], [530, 618], [530, 712], [268, 712], [268, 212], [190, 212]],
+  'notifications>boutique-hossegor': [[560, 618], [530, 618], [530, 712], [268, 712], [268, 332], [190, 332]],
+  'notifications>boutique-lacanau': [[560, 618], [530, 618], [530, 712], [268, 712], [268, 452], [190, 452]],
+  'observatoire>boutique-hossegor': [[40, 80], [20, 80], [20, 322], [40, 322]],
+  'observatoire>boutique-lacanau': [[40, 88], [14, 88], [14, 442], [40, 442]],
+  'observatoire>rabbitmq': [[190, 88], [280, 88], [280, 140], [800, 140], [800, 380], [830, 380]],
+  'catalogue>erp-connector': [[710, 306], [790, 306], [790, 88], [830, 88]],
+};
+
+// Motion design injecté dans le schéma : sillon, traînée, halo, onde d'impact, compteurs.
+const CSS_LIVE = `
+  .live-sillon { fill: none; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; opacity: .32; transition: opacity .7s ease-out; }
+  .live-sillon.fini { opacity: 0; }
+  .live-trainee { fill: none; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; opacity: .5; }
+  .live-halo { opacity: .22; transform-box: fill-box; transform-origin: center; animation: live-pouls .9s ease-in-out infinite; }
+  .live-tete { stroke: #fff; stroke-width: 2; }
+  .live-pastille text { font: 600 11px system-ui, -apple-system, sans-serif; fill: #fff; }
+  .live-onde { fill: none; stroke-width: 2.5; transform-box: fill-box; transform-origin: center; animation: live-onde .9s cubic-bezier(.2, .7, .3, 1) forwards; pointer-events: none; }
+  .live-impact > rect:not(.c-mask) { animation: live-impact .55s cubic-bezier(.2, .7, .3, 1); }
+  .live-compteur circle { fill: #1c7ed6; stroke: #fff; stroke-width: 1.5; }
+  .live-compteur text, .live-dlq text { font: 700 10.5px system-ui, -apple-system, sans-serif; fill: #fff; }
+  .live-compteur, .live-dlq { transform-box: fill-box; transform-origin: center; pointer-events: none; }
+  .live-compteur.pop, .live-dlq.pop { animation: live-pop .4s cubic-bezier(.3, 1.6, .5, 1); }
+  .live-dlq rect { fill: #c92a2a; }
+  .live-paquets, .live-sillons { pointer-events: none; }
+  @keyframes live-pouls { 50% { transform: scale(1.4); opacity: .08; } }
+  @keyframes live-onde { from { transform: scale(1); opacity: .9; } to { transform: scale(1.16); opacity: 0; } }
+  @keyframes live-impact { 0% { stroke-width: 4.5; } 100% { stroke-width: 1.5; } }
+  @keyframes live-pop { 0% { transform: scale(.4); } 100% { transform: scale(1); } }
+  @media (prefers-reduced-motion: reduce) { .live-halo, .live-onde, .live-impact > rect, .live-compteur.pop, .live-dlq.pop { animation: none; } }
+`;
+
+const scene = { pret: false };
+const iframe = document.getElementById('schema');
+iframe.addEventListener('load', () => {
+  try { preparerScene(iframe.contentDocument); } catch (err) { console.error('Schéma non préparé', err); }
+});
+
+function creer(tag, attrs, parent) {
+  const e = scene.doc.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  parent.appendChild(e);
+  return e;
+}
+
+// Icônes plus présentes : logo officiel (RabbitMQ, Redis, PostgreSQL, Node.js) et pictogramme du type de composant.
+function agrandirIcones(g) {
+  const marque = g.querySelector('.brand-mark');
+  const m = marque && /translate\(([-\d.]+)[ ,]+([-\d.]+)\)/.exec(marque.getAttribute('transform') || '');
+  if (m) marque.setAttribute('transform', `translate(${+m[1] - 6} ${+m[2]}) scale(1.375)`);
+  const sigil = g.querySelector('.semantic-sigil');
+  const n = sigil && /translate\(([-\d.]+)[ ,]+([-\d.]+)\)/.exec(sigil.getAttribute('transform') || '');
+  if (n) sigil.setAttribute('transform', `translate(${n[1]} ${n[2]}) scale(0.9)`);
+}
+
+function preparerScene(doc) {
+  const noeuds = [...doc.querySelectorAll('g[data-node-id]')];
+  if (!noeuds.length) return;
+  scene.doc = doc;
+  const style = doc.createElement('style');
+  style.textContent = CSS_LIVE;
+  doc.head.appendChild(style);
+  const parent = noeuds[0].parentNode;
+  const sillons = doc.createElementNS(NS, 'g'); sillons.setAttribute('class', 'live-sillons');
+  parent.insertBefore(sillons, noeuds[0]);
+  const paquets = doc.createElementNS(NS, 'g'); paquets.setAttribute('class', 'live-paquets');
+  parent.appendChild(paquets);
+  const rects = {};
+  for (const g of noeuds) {
+    const r = g.querySelector('rect:not(.c-mask)');
+    rects[g.dataset.nodeId] = { x: +r.getAttribute('x'), y: +r.getAttribute('y'), w: +r.getAttribute('width'), h: +r.getAttribute('height'), g };
+    agrandirIcones(g);
+  }
+  const routes = {};
+  for (const p of doc.querySelectorAll('path[data-edge-from]')) routes[`${p.dataset.edgeFrom}>${p.dataset.edgeTo}`] = p.getAttribute('d');
+  for (const [k, pts] of Object.entries(DETOURS)) if (!routes[k]) routes[k] = 'M ' + pts.map((pt) => pt.join(' ')).join(' L ');
+  Object.assign(scene, { pret: true, sillons, paquets, rects, routes, compteurs: {}, dlq: null });
+}
+
+// Les variables CSS de cette page n'existent pas dans l'iframe : on passe la couleur calculée.
+const resoudre = (c) => {
+  const m = /^var\((--[\w-]+)\)$/.exec(c);
+  return m ? getComputedStyle(document.documentElement).getPropertyValue(m[1]).trim() || '#888' : c;
+};
+
+function itineraire(de, vers) {
+  if (scene.routes[`${de}>${vers}`]) return { d: scene.routes[`${de}>${vers}`], inverse: false };
+  if (scene.routes[`${vers}>${de}`]) return { d: scene.routes[`${vers}>${de}`], inverse: true };
+  const a = scene.rects[de], b = scene.rects[vers];
+  if (!a || !b) return null;
+  return { d: `M ${a.x + a.w / 2} ${a.y + a.h / 2} L ${b.x + b.w / 2} ${b.y + b.h / 2}`, inverse: false };
+}
+
+// ---------- Description des traces ----------
+const EVT = { 'stock.mis-a-jour': 'StockMisAJour', 'commande.creee': 'CommandeCréée', 'commande.reservee': 'CommandeRéservée', 'commande.expediee': 'CommandeExpédiée' };
+const evtCourt = (t = '') => EVT[t.replace('com.surfwear.', '')] || t;
+const court = (s = '', n = 22) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
+
+function decrire(tr) {
+  const ok = typeof tr.statut === 'number' && tr.statut < 400;
+  switch (tr.type) {
+    case 'requete': return {
+      couleur: 'var(--requete)', etiquette: `${tr.methode} ${court(tr.chemin, 20)}`,
+      phrase: tr.synthetique ? `Le logisticien valide une expédition sur l'écran de l'ERP` : `${nom(tr.de)} appelle ${nom(tr.vers)} : ${tr.methode} ${tr.chemin}` };
+    case 'reponse': return {
+      couleur: ok ? 'var(--ok)' : 'var(--ko)', etiquette: String(tr.statut),
+      phrase: `${nom(tr.de)} répond ${tr.statut} à ${nom(tr.vers)}${tr.duree != null ? ` en ${tr.duree} ms` : ''}` };
+    case 'evenement': return {
+      couleur: tr.invalide ? 'var(--dlq)' : 'var(--evt)', etiquette: tr.invalide ? 'message invalide' : evtCourt(tr.evenement),
+      phrase: tr.invalide ? `Vous publiez un message ${evtCourt(tr.evenement)} volontairement invalide sur le bus`
+        : `${nom(tr.de)} publie l'événement ${evtCourt(tr.evenement)} sur le bus` };
+    case 'livraison': return {
+      couleur: 'var(--evt)', etiquette: evtCourt(tr.evenement) + (tr.essai ? ` (essai ${tr.essai + 1})` : ''),
+      phrase: `Le bus livre ${evtCourt(tr.evenement)} à ${nom(tr.vers)} (file ${tr.file})${tr.essai ? `, essai n°${tr.essai + 1}` : ''}` };
+    case 'webhook': return {
+      couleur: 'var(--webhook)', etiquette: 'webhook ' + evtCourt(tr.evenement),
+      phrase: `Notifications envoie un webhook signé HMAC (${evtCourt(tr.evenement)}) au logiciel de ${nom(tr.vers)}` };
+    case 'mail': return {
+      couleur: 'var(--mail)', etiquette: 'e-mail',
+      phrase: `Notifications envoie un e-mail à ${tr.destinataire} : « ${tr.sujet} »` };
+    case 'journal': return {
+      couleur: 'var(--journal)', etiquette: `${tr.nombre} changement${tr.nombre > 1 ? 's' : ''}`,
+      phrase: `Le connecteur lit ${tr.nombre} changement${tr.nombre > 1 ? 's' : ''} dans le journal de l'ERP (${(tr.types || []).join(', ')})` };
+    case 'retry': return {
+      couleur: 'var(--retry)', etiquette: `échec, attente ${tr.delai} s`,
+      phrase: `${nom(tr.de)} n'arrive pas à traiter ${evtCourt(tr.evenement)} : le message attend ${tr.delai} s dans ${tr.file} avant un nouvel essai` };
+    case 'dlq': return {
+      couleur: 'var(--dlq)', etiquette: 'file d\'erreurs',
+      phrase: `Échec définitif après 3 essais : le message est rangé dans ${tr.file}, rien n'est perdu` };
+    default: return { couleur: 'var(--doux)', etiquette: tr.type, phrase: `${nom(tr.de)} → ${nom(tr.vers)}` };
+  }
+}
+
+// ---------- Lecture animée ----------
+const file = [];
+let pause = false, dernierLogisticien = 0;
+const vitesse = () => Number(document.getElementById('vitesse').value);
+const attendre = (ms) => new Promise((r) => setTimeout(r, ms));
+const reduit = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function ajouter(tr) {
+  if (tr.de === 'logisticien') dernierLogisticien = Date.now();
+  if (tr.type === 'journal' && (tr.types || []).includes('EXPEDITION') && Date.now() - dernierLogisticien > 5000) {
+    file.push({ type: 'requete', de: 'logisticien', vers: 'erp-mock', methode: 'POST', chemin: '/expeditions', synthetique: true, t: tr.t });
+  }
+  file.push(tr);
+  majAttente();
+}
+function majAttente() {
+  document.getElementById('attente').textContent = file.length ? `${file.length} échange${file.length > 1 ? 's' : ''} en attente` : '';
+}
+
+const adoucir = (k) => (k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
+
+function animer(tr, d, acceleration = vitesse()) {
+  if (!scene.pret || !scene.rects[tr.de] || !scene.rects[tr.vers]) return Promise.resolve();
+  const it = itineraire(tr.de, tr.vers);
+  if (!it) return Promise.resolve();
+  d = { ...d, couleur: resoudre(d.couleur) };
+  const sillon = creer('path', { d: it.d, class: 'live-sillon', stroke: d.couleur }, scene.sillons);
+  const L = sillon.getTotalLength();
+  const g = creer('g', { class: 'live-paquet' }, scene.paquets);
+  const TRAINEE = 54;
+  const trainee = creer('path', { d: it.d, class: 'live-trainee', stroke: d.couleur, 'stroke-dasharray': `${TRAINEE} ${L + TRAINEE}` }, g);
+  const halo = creer('circle', { r: 12, class: 'live-halo', fill: d.couleur }, g);
+  const tete = creer('circle', { r: 5.5, class: 'live-tete', fill: d.couleur }, g);
+  const pastille = creer('g', { class: 'live-pastille' }, g);
+  const fond = creer('rect', { rx: 9, height: 18, y: -9, fill: d.couleur }, pastille);
+  const texte = creer('text', { y: 4, 'text-anchor': 'middle' }, pastille);
+  texte.textContent = d.etiquette;
+  const lw = texte.getComputedTextLength() + 16;
+  fond.setAttribute('width', lw); fond.setAttribute('x', -lw / 2);
+  const duree = (reduit ? 250 : Math.max(750, Math.min(1600, L * 2.4))) / Math.min(acceleration, vitesse() * 3);
+  const debut = performance.now();
+  return new Promise((resolve) => {
+    function pas(now) {
+      const k = Math.min(1, (now - debut) / duree);
+      const e = adoucir(k);
+      const s = it.inverse ? L * (1 - e) : L * e;
+      const pt = sillon.getPointAtLength(s);
+      for (const c of [halo, tete]) { c.setAttribute('cx', pt.x); c.setAttribute('cy', pt.y); }
+      trainee.setAttribute('stroke-dashoffset', -(it.inverse ? s : s - TRAINEE));
+      pastille.setAttribute('transform', `translate(${pt.x} ${pt.y - 22})`);
+      pastille.setAttribute('opacity', Math.max(0, Math.min(1, k / .12, (1 - k) / .15)));
+      if (k < 1) return requestAnimationFrame(pas);
+      g.remove();
+      sillon.classList.add('fini');
+      setTimeout(() => sillon.remove(), 750);
+      arrivee(tr, d);
+      resolve();
+    }
+    requestAnimationFrame(pas);
+  });
+}
+
+function rejouer(el, classe) { el.classList.remove(classe); void el.getBoundingClientRect(); el.classList.add(classe); }
+
+function arrivee(tr, d) {
+  const r = scene.rects[tr.vers];
+  if (!r) return;
+  d = { ...d, couleur: resoudre(d.couleur) };
+  const onde = creer('rect', { x: r.x, y: r.y, width: r.w, height: r.h, rx: 8, class: 'live-onde', stroke: d.couleur }, scene.paquets);
+  setTimeout(() => onde.remove(), 950);
+  rejouer(r.g, 'live-impact');
+  let c = scene.compteurs[tr.vers];
+  if (!c) {
+    const g = creer('g', { class: 'live-compteur' }, scene.paquets);
+    creer('circle', { cx: r.x + r.w, cy: r.y, r: 10 }, g);
+    c = scene.compteurs[tr.vers] = { g, t: creer('text', { x: r.x + r.w, y: r.y + 3.7, 'text-anchor': 'middle' }, g), n: 0 };
+  }
+  c.n += 1; c.t.textContent = c.n > 99 ? '99+' : c.n;
+  rejouer(c.g, 'pop');
+  if (tr.type === 'dlq') {
+    const b = scene.rects.rabbitmq;
+    if (!scene.dlq) {
+      const g = creer('g', { class: 'live-dlq' }, scene.paquets);
+      creer('rect', { x: b.x + b.w / 2 - 34, y: b.y + b.h + 8, width: 68, height: 20, rx: 10 }, g);
+      scene.dlq = { g, t: creer('text', { x: b.x + b.w / 2, y: b.y + b.h + 22, 'text-anchor': 'middle' }, g), n: 0 };
+    }
+    scene.dlq.n += 1; scene.dlq.t.textContent = `DLQ : ${scene.dlq.n}`;
+    rejouer(scene.dlq.g, 'pop');
+  }
+}
+
+function journaliser(tr, d) {
+  const j = document.getElementById('journal');
+  if (j.firstElementChild?.classList.contains('vide')) j.innerHTML = '';
+  const li = document.createElement('li');
+  const h = new Date(tr.t || Date.now());
+  li.innerHTML = `<span class="h">${h.toLocaleTimeString('fr-FR')}.${String(h.getMilliseconds()).padStart(3, '0')}</span><span class="p" style="background:${d.couleur}"></span><span></span>`;
+  li.lastChild.textContent = d.phrase;
+  j.prepend(li);
+  while (j.children.length > 200) j.lastChild.remove();
+}
+
+(async function lecteur() {
+  for (;;) {
+    if (pause || !file.length) { await attendre(80); continue; }
+    const tr = file.shift(); majAttente();
+    const d = decrire(tr);
+    document.getElementById('phrase').textContent = d.phrase;
+    document.querySelector('#narration .point').style.background = d.couleur;
+    journaliser(tr, d);
+    // Rattrapage : plus la file d'attente est longue, plus la lecture accélère.
+    const acceleration = vitesse() * (1 + file.length / 12);
+    animer(tr, d, acceleration);
+    await attendre((reduit ? 250 : 650) / acceleration);
+  }
+})();
+
+document.getElementById('pause').onclick = (e) => { pause = !pause; e.target.textContent = pause ? 'Reprendre' : 'Pause'; };
+document.getElementById('vider').onclick = () => {
+  file.length = 0; majAttente();
+  document.getElementById('journal').innerHTML = '<li class="vide">Rien pour le moment.</li>';
+  if (scene.pret) {
+    for (const c of Object.values(scene.compteurs)) c.g.remove();
+    scene.compteurs = {};
+    scene.dlq?.g.remove(); scene.dlq = null;
+  }
+};
+
+// ---------- Flux en direct ----------
+function connecter() {
+  const pastille = document.getElementById('connexion');
+  const es = new EventSource('/flux');
+  es.onopen = () => { pastille.className = 'pastille ok'; pastille.textContent = 'En direct'; };
+  es.onerror = () => { pastille.className = 'pastille ko'; pastille.textContent = 'Reconnexion…'; };
+  es.onmessage = (m) => ajouter(JSON.parse(m.data));
+}
+connecter();
+
+// ---------- Actions ----------
+async function action(chemin, corps) {
+  const r = await fetch('/actions/' + chemin, { method: corps ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json' }, body: corps ? JSON.stringify(corps) : undefined });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.erreur || `Erreur ${r.status}`);
+  return data;
+}
+let articles = [], derniereCommande = null;
+async function chargerArticles() {
+  articles = await action('articles');
+  const sel = document.getElementById('l-article'), garde = sel.value;
+  sel.innerHTML = articles.map((a) => `<option value="${a.gtin}">${a.reference} (stock ${a.stock_disponible})</option>`).join('');
+  if (garde) sel.value = garde;
+}
+const resumeLigne = (l) => `stock ${l.quantite_stock ?? 0}` + (l.quantite_production ? `, production ${l.quantite_production}${l.date_prevue ? ' le ' + l.date_prevue : ''}` : '') + (l.quantite_non_couverte ? `, non couvert ${l.quantite_non_couverte}` : '');
+const resumeCommande = (c) => `${c.id.slice(0, 8)} : ${c.statut} · ${c.lignes.map(resumeLigne).join(' ; ')}`;
+
+const ETAPES = [
+  { nom: 'Consulter le catalogue', texte: "La boutique de Biarritz rafraîchit son catalogue. La passerelle vérifie son jeton, puis le service Catalogue répond depuis son cache Redis : l'ERP n'est pas sollicité.",
+    lancer: async () => `${(await action('catalogue', { boutique: 'biarritz' })).articles} articles reçus par la boutique` },
+  { nom: 'Passer une commande', texte: "Biarritz commande. Le stock est réservé tout de suite dans l'ERP (appel synchrone), puis les événements partent sur le bus : Notifications envoie le webhook signé et l'e-mail, Analytics compte la demande, le cache du catalogue se met à jour.",
+    lancer: async () => {
+      await chargerArticles();
+      const a = [...articles].sort((x, y) => y.stock_disponible - x.stock_disponible)[0];
+      const r = await action('commander', { boutique: 'biarritz', gtin: a.gtin, quantite: 2 });
+      if (!r.ok) throw new Error(r.erreur);
+      derniereCommande = r.commande.id;
+      return `Article ${a.reference}, quantité 2\nCommande ${resumeCommande(r.commande)}`;
+    } },
+  { nom: 'Trois boutiques en même temps', texte: "Les trois boutiques veulent le même article rare à la même seconde. L'ERP verrouille la ligne de stock : une seule obtient le stock réel, les autres reçoivent la production à venir avec sa date. Plus de double vente.",
+    lancer: async () => {
+      await chargerArticles();
+      const rares = articles.filter((a) => a.stock_disponible >= 2 && a.stock_disponible <= 15);
+      const a = (rares.length ? rares : articles.filter((x) => x.stock_disponible > 0))[0] || articles[0];
+      const q = Math.max(1, Math.ceil(a.stock_disponible * 0.6));
+      const res = await action('concurrence', { gtin: a.gtin, quantite: q });
+      const ok = res.find((r) => r.ok); if (ok) derniereCommande = ok.commande.id;
+      return `Article ${a.reference} : stock disponible ${a.stock_disponible}, chaque boutique en demande ${q}\n`
+        + res.map((r) => `${r.boutique} : ${r.ok ? resumeLigne(r.commande.lignes[0]) : 'erreur ' + r.erreur}`).join('\n');
+    } },
+  { nom: 'Le logisticien expédie', texte: "Le logisticien valide le colis dans l'ERP. Le connecteur lit le journal de l'ERP et publie CommandeExpédiée : Commandes passe la commande à « expédiée », la boutique reçoit le bon de livraison par webhook et met son stock à jour toute seule.",
+    lancer: async () => { const e = await action('expedier', { commande_id: derniereCommande }); return `Bon de livraison ${e.numero_bl}, ${e.lignes.map((l) => l.quantite).reduce((a, b) => a + b, 0)} pièce(s)`; } },
+  { nom: 'Réception de la production', texte: "Un lot de production arrive à l'entrepôt : le stock potentiel devient du stock réel. L'ERP note le changement, le connecteur publie StockMisAJour et le catalogue se met à jour.",
+    lancer: async () => { const r = await action('receptionner', {}); return `Lot ${r.lot.id} (${r.lot.reference}) réceptionné : stock disponible ${r.stock.stock_disponible}`; } },
+  { nom: 'Résilience : message invalide', texte: "On publie un message volontairement invalide. Le catalogue échoue, le message attend 2 s, puis 4 s, puis 8 s dans des files d'attente avant chaque nouvel essai. Après 3 échecs il est rangé dans la file d'erreurs : rien n'est perdu.",
+    lancer: async () => { await action('message-empoisonne', {}); return 'Message publié : suivez les essais pendant une quinzaine de secondes.'; } },
+];
+
+const conteneur = document.getElementById('etapes');
+ETAPES.forEach((et, i) => {
+  const div = document.createElement('div');
+  div.className = 'etape';
+  div.innerHTML = `<div class="tete"><span class="num">${i + 1}</span><span class="nom"></span><button class="principal">Lancer</button></div><p></p><div class="resultat"></div>`;
+  div.querySelector('.nom').textContent = et.nom;
+  div.querySelector('p').textContent = et.texte;
+  const bouton = div.querySelector('button'), res = div.querySelector('.resultat');
+  bouton.onclick = async () => {
+    bouton.disabled = true; res.className = 'resultat'; res.textContent = 'En cours…';
+    try { res.textContent = await et.lancer(); div.classList.add('faite'); }
+    catch (err) { res.className = 'resultat erreur'; res.textContent = err.message; }
+    finally { bouton.disabled = false; chargerArticles().catch(() => {}); }
+  };
+  conteneur.appendChild(div);
+});
+
+const sortie = document.getElementById('l-resultat');
+async function libre(fn) {
+  sortie.className = ''; sortie.textContent = 'En cours…';
+  try { sortie.textContent = await fn(); } catch (err) { sortie.textContent = err.message; }
+  chargerArticles().catch(() => {});
+}
+document.getElementById('l-commander').onclick = () => libre(async () => {
+  const r = await action('commander', { boutique: document.getElementById('l-boutique').value, gtin: document.getElementById('l-article').value, quantite: Number(document.getElementById('l-qte').value) });
+  if (!r.ok) throw new Error(r.erreur);
+  derniereCommande = r.commande.id;
+  return 'Commande ' + resumeCommande(r.commande);
+});
+document.getElementById('l-expedier').onclick = () => libre(async () => `Bon de livraison ${(await action('expedier', { commande_id: derniereCommande })).numero_bl}`);
+document.getElementById('l-recevoir').onclick = () => libre(async () => { const r = await action('receptionner', {}); return `Lot ${r.lot.id} (${r.lot.reference}) réceptionné`; });
+chargerArticles().catch(() => {});
+</script>
+</body>
+</html>

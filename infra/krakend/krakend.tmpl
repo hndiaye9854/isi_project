@@ -1,0 +1,66 @@
+{{- /*
+  Passerelle d'API Surfwear (KrakenD CE, configuration flexible).
+  Les routes viennent de settings/routes.json : pour exposer un nouveau service, on ajoute ses lignes là-bas.
+  Le fournisseur d'identité dépend de AUTH_MODE : "dev" (faux fournisseur mock-oauth2) ou "auth0".
+*/ -}}
+{{- $auth0 := eq (env "AUTH_MODE") "auth0" -}}
+{{- $audience := env "AUTH0_AUDIENCE" | default "https://api.surfwear.example" -}}
+{
+  "$schema": "https://www.krakend.io/schema/v3.0/krakend.json",
+  "version": 4,
+  "name": "Surfwear B2B - passerelle d'API",
+  "port": 8080,
+  "timeout": "10s",
+  "extra_config": {
+    "security/cors": {
+      "allow_origins": ["*"],
+      "allow_methods": ["GET", "POST", "DELETE", "OPTIONS"],
+      "allow_headers": ["Authorization", "Content-Type", "Idempotency-Key"],
+      "expose_headers": ["Location", "X-Request-Id"],
+      "max_age": "12h"
+    }
+  },
+  "endpoints": [
+    {{- range $i, $r := .routes.routes }}
+    {{- if $i }},{{ end }}
+    {
+      "endpoint": "{{ $r.path }}",
+      "method": "{{ $r.method }}",
+      "output_encoding": "no-op",
+      "input_headers": ["Content-Type", "Idempotency-Key", "X-Appelant", "X-Request-Id", "X-Boutique-Id", "X-Sujet"],
+      "input_query_strings": ["categorie", "quantite", "statut"],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          {{- if $auth0 }}
+          "jwk_url": "https://{{ env "AUTH0_DOMAIN" }}/.well-known/jwks.json",
+          "issuer": "https://{{ env "AUTH0_DOMAIN" }}/",
+          {{- else }}
+          "jwk_url": "http://mock-oauth2:8080/surfwear/jwks",
+          "disable_jwk_security": true,
+          {{- end }}
+          "audience": ["{{ $audience }}"],
+          "scopes": ["{{ $r.scope }}"],
+          "scopes_key": "scope",
+          "scopes_matcher": "any",
+          "cache": true,
+          "propagate_claims": [["boutique_id", "X-Boutique-Id"], ["sub", "X-Sujet"]]
+        },
+        "qos/ratelimit/router": {
+          "client_max_rate": 300,
+          "client_capacity": 300,
+          "every": "1m",
+          "strategy": "ip"
+        }
+      },
+      "backend": [
+        {
+          "host": ["{{ index $.routes.services $r.service }}"],
+          "url_pattern": "{{ $r.backend }}",
+          "encoding": "no-op"
+        }
+      ]
+    }
+    {{- end }}
+  ]
+}

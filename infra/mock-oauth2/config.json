@@ -1,0 +1,58 @@
+{
+  "interactiveLogin": false,
+  "tokenCallbacks": [
+    {
+      "issuerId": "surfwear",
+      "tokenExpiry": 86400,
+      "requestMappings": [
+        {
+          "requestParam": "client_id",
+          "match": "boutique-b001",
+          "claims": {
+            "sub": "boutique-b001",
+            "aud": [
+              "https://api.surfwear.example"
+            ],
+            "scope": "read:catalogue read:commandes write:commandes manage:webhooks",
+            "boutique_id": "B001"
+          }
+        },
+        {
+          "requestParam": "client_id",
+          "match": "boutique-b002",
+          "claims": {
+            "sub": "boutique-b002",
+            "aud": [
+              "https://api.surfwear.example"
+            ],
+            "scope": "read:catalogue read:commandes write:commandes manage:webhooks",
+            "boutique_id": "B002"
+          }
+        },
+        {
+          "requestParam": "client_id",
+          "match": "boutique-b003",
+          "claims": {
+            "sub": "boutique-b003",
+            "aud": [
+              "https://api.surfwear.example"
+            ],
+            "scope": "read:catalogue read:commandes write:commandes manage:webhooks",
+            "boutique_id": "B003"
+          }
+        },
+        {
+          "requestParam": "client_id",
+          "match": "commercial",
+          "claims": {
+            "sub": "commercial",
+            "aud": [
+              "https://api.surfwear.example"
+            ],
+            "scope": "read:catalogue read:stats"
+          }
+        }
+      ]
+    }
+  ]
+}

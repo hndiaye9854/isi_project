@@ -16,6 +16,18 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - name: Configuration de la passerelle KrakenD (modes dev et auth0)
+        run: |
+          for mode in dev auth0; do
+            docker run --rm -v "$PWD/infra/krakend":/etc/krakend:ro -e FC_ENABLE=1 -e FC_SETTINGS=/etc/krakend/settings \
+              -e AUTH_MODE=$mode -e AUTH0_DOMAIN=exemple.eu.auth0.com krakend:3.0.1 \
+              krakend check -t -n -c /etc/krakend/krakend.tmpl
+          done
+      - name: Configuration Terraform Auth0
+        run: |
+          docker run --rm -v "$PWD/infra/terraform/auth0":/w -w /w hashicorp/terraform:1.16.6 fmt -check
+          docker run --rm -v "$PWD/infra/terraform/auth0":/w -w /w hashicorp/terraform:1.16.6 init -backend=false -input=false
+          docker run --rm -v "$PWD/infra/terraform/auth0":/w -w /w hashicorp/terraform:1.16.6 validate
 
   bout-en-bout:
     runs-on: ubuntu-latest

@@ -49,7 +49,7 @@ Une plateforme qui combine API REST et événements. Elle se place entre l'ERP d
 
 | Composant | Rôle |
 | --- | --- |
-| `gateway` | Passerelle d'API (Auth0, permissions, quotas, documentation) |
+| `gateway` | Passerelle d'API **KrakenD** : vérification des jetons Auth0, permissions, quotas, routage déclaratif |
 | `catalogue` | Catalogue et disponibilité (cache Redis) |
 | `commandes` | Commandes et réservation (PostgreSQL, outbox) |
 | `notifications` | Webhooks signés et e-mails |
@@ -70,7 +70,7 @@ Le détail des choix techniques est dans [docs/architecture.md](docs/architectur
 
 - Docker 24 ou plus récent, avec Docker Compose v2. **Podman** fonctionne aussi, avec `podman compose`.
 - Environ 2 Go de mémoire libre.
-- Ports libres : 8080, 8090, 7001 à 7003, 8025, 15672.
+- Ports libres : 8080, 8088, 8090, 8099, 7001 à 7003, 8025, 15672.
 
 ### Lancer l'écosystème
 
@@ -80,7 +80,7 @@ cd surfwear-interop
 docker compose up -d --build
 ```
 
-Sans fichier `.env`, la plateforme démarre en **mode démonstration** (`AUTH_MODE=dev`), sans compte Auth0. Pour utiliser Auth0, voir la [section 5](#5-authentification-avec-auth0).
+Sans fichier `.env`, la plateforme démarre en **mode démonstration** (`AUTH_MODE=dev`), sans compte Auth0 : un faux fournisseur OAuth2 (`mock-oauth2`) délivre de vrais jetons JWT. Pour utiliser Auth0, voir la [section 5](#5-authentification-avec-auth0).
 
 Attendez que tous les services soient prêts (environ une minute au premier lancement) :
 
@@ -92,7 +92,8 @@ docker compose ps
 
 | Adresse | Contenu |
 | --- | --- |
-| http://localhost:8080/docs | Documentation interactive de l'API (Swagger) |
+| http://localhost:8088 | Documentation interactive de l'API (Swagger UI), qui appelle la passerelle sur http://localhost:8080 |
+| http://localhost:8099 | Faux fournisseur OAuth2 du mode démonstration (jetons : `bash scripts/jeton.sh B001`) |
 | http://localhost:8090/logistique/ | ERP simulé : écran du logisticien (expédier, réceptionner la production) |
 | http://localhost:7001 | Logiciel de la boutique de Biarritz (B001) |
 | http://localhost:7002 | Logiciel de la boutique de Hossegor (B002) |
@@ -149,8 +150,26 @@ Quelques secondes plus tard, la commande passe automatiquement au statut `RESERV
 **5. Le commercial consulte les références en tension.**
 
 ```bash
-curl -s -H 'Authorization: Bearer dev-commercial' localhost:8080/api/v1/stats/tensions | jq
+curl -s -H "Authorization: Bearer $(bash scripts/jeton.sh COMMERCIAL --imprimer)" localhost:8080/api/v1/stats/tensions | jq
 ```
+
+### Démo animée des flux (observatoire)
+
+Une page web montre **en direct** les échanges entre les composants : chaque paquet animé est un vrai appel REST, un événement du bus, un webhook ou un e-mail, capté au moment où il a lieu.
+
+```bash
+docker compose --profile demo up -d --build
+```
+
+Ouvrez ensuite http://localhost:8070.
+
+- **Visite guidée** : six étapes à lancer une par une (catalogue, commande, trois boutiques en même temps, expédition, réception de production, message invalide jusqu'à la file d'erreurs). Chaque étape explique ce que l'on va voir.
+- **Mode libre** : choisir une boutique, un article et une quantité, puis commander, expédier ou réceptionner.
+- **Swagger** : les appels faits sur http://localhost:8088 apparaissent aussi.
+- La vitesse se règle (× 0,5 à × 4) : les échanges réels durent quelques millisecondes, ils sont rejoués dans l'ordre pour rester lisibles.
+- Le schéma est rendu avec [archify](https://github.com/tt-a1i/archify) à partir de `services/observatoire/schema/surfwear.architecture.json` (logos RabbitMQ, Redis, PostgreSQL, Node.js). Après une modification du schéma : `archify deliver architecture services/observatoire/schema/surfwear.architecture.json services/observatoire/public/schema.html --quality showcase`.
+
+Fonctionnement : chaque service publie une courte trace pour chaque échange sur l'échange RabbitMQ `surfwear.traces` (au mieux, sans effet sur le traitement ; `TRACES=off` pour désactiver). Le service `observatoire` les remet dans l'ordre et les pousse au navigateur (Server-Sent Events). Il est relié aux trois réseaux pour piloter les boutiques et l'ERP : c'est un outil de démonstration, à ne jamais déployer en production.
 
 ## 5. Authentification avec Auth0
 
@@ -170,19 +189,22 @@ Elle lit ensuite la boutique dans le jeton.
 | `manage:webhooks` | ✔ | |
 | `read:stats` | | ✔ |
 
-**Mise en place**, détaillée pas à pas dans [docs/auth0.md](docs/auth0.md) :
+**Configuration en code (Terraform)** : l'API, ses permissions, les applications des boutiques et du commercial, leurs autorisations et l'Action qui ajoute `boutique_id` au jeton sont décrites dans [infra/terraform/auth0](infra/terraform/auth0/README.md). Ajouter une boutique, c'est une ligne dans `variables.tf`.
 
-1. Créer l'API « API Surfwear B2B » dans Auth0, avec l'identifiant `https://api.surfwear.example` et les permissions ci-dessus.
-2. Créer une application *Machine to Machine* par boutique, et une pour le commercial.
-3. Associer chaque application à sa boutique (Action Auth0 ou variable `AUTH0_CLIENT_BOUTIQUES`).
-4. Copier `.env.example` en `.env`, puis renseigner le domaine, l'audience et les identifiants des applications.
-5. Relancer : `docker compose up -d`.
+```bash
+cd infra/terraform/auth0 && terraform init && terraform apply && cd ../../..
+bash scripts/env-depuis-terraform.sh     # recopie Client ID et secrets dans .env
+```
 
-**Mode démonstration** (`AUTH_MODE=dev`, utilisé par défaut et par la CI) : les jetons `dev-B001`, `dev-B002`, `dev-B003` et `dev-commercial` sont acceptés sans Auth0. Ce mode ne doit jamais être utilisé en production.
+Puis `AUTH_MODE=auth0` dans `.env` et `docker compose up -d`. Le guide complet est dans [docs/auth0.md](docs/auth0.md).
+
+**Mode démonstration** (`AUTH_MODE=dev`, utilisé par défaut et par la CI) : le faux fournisseur `mock-oauth2` remplace Auth0 et délivre des jetons signés avec les mêmes permissions et le même claim `boutique_id`. La passerelle les vérifie exactement comme ceux d'Auth0. Ce mode ne doit jamais être utilisé en production.
+
+**Obtenir un jeton** (pour Swagger ou curl) : `bash scripts/jeton.sh B001` le copie dans le presse-papiers ; `B002`, `B003` ou `COMMERCIAL` pour les autres profils. Le script interroge le faux fournisseur ou Auth0 selon `AUTH_MODE`.
 
 ## 6. Utiliser l'API
 
-La documentation complète est servie sur http://localhost:8080/docs. Le contrat est dans [docs/openapi.yaml](docs/openapi.yaml), les événements dans [docs/asyncapi.yaml](docs/asyncapi.yaml).
+La documentation complète est servie sur http://localhost:8088 (bouton **Authorize** : coller un jeton de `scripts/jeton.sh`). Le contrat est dans [docs/openapi.yaml](docs/openapi.yaml), les événements dans [docs/asyncapi.yaml](docs/asyncapi.yaml).
 
 | Méthode | Route | Rôle |
 | --- | --- | --- |
@@ -199,8 +221,9 @@ La documentation complète est servie sur http://localhost:8080/docs. Le contrat
 **Exemple : passer une commande**
 
 ```bash
+TOKEN=$(bash scripts/jeton.sh B001 --imprimer)
 curl -s -X POST http://localhost:8080/api/v1/commandes \
-  -H "Authorization: Bearer dev-B001" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Idempotency-Key: $(uuidgen)" \
   -H "Content-Type: application/json" \
   -d '{"reference_boutique":"BIA-0412","lignes":[{"gtin":"3760123450035","quantite":10},{"gtin":"3760123450097","quantite":20}]}' | jq
@@ -217,7 +240,6 @@ surfwear-interop/
 ├── packages/
 │   └── common/              Bibliothèque partagée : bus, base de données, HTTP, journaux, métriques
 ├── services/
-│   ├── gateway/             Passerelle d'API (Auth0)
 │   ├── catalogue/           Catalogue et disponibilité
 │   ├── commandes/           Commandes et réservation
 │   ├── notifications/       Webhooks et e-mails
@@ -226,7 +248,11 @@ surfwear-interop/
 │   └── erp-mock/            ERP simulé + écran du logisticien
 ├── simulators/
 │   └── boutique/            Logiciel de boutique simulé
-├── infra/                   PostgreSQL, Prometheus, Grafana
+├── infra/
+│   ├── krakend/             Passerelle d'API (modèle + settings/routes.json)
+│   ├── terraform/auth0/     Configuration Auth0 en Terraform
+│   ├── mock-oauth2/         Faux fournisseur OAuth2 (mode démonstration)
+│   └── postgres, prometheus, grafana
 ├── docs/                    OpenAPI, AsyncAPI, architecture, guide Auth0, schéma des flux
 ├── scripts/                 Démonstration et test de bout en bout
 ├── Dockerfile               Image commune (argument SERVICE_PATH)
@@ -288,8 +314,10 @@ Chaque service lit sa configuration dans des variables d'environnement, avec des
 | Symptôme | Solution |
 | --- | --- |
 | `docker compose ps` affiche un service « unhealthy » | `docker compose logs <service>`. Au premier lancement, RabbitMQ peut mettre 30 secondes à démarrer : les services se reconnectent seuls. |
-| 401 « Jeton refusé » en mode Auth0 | Vérifier `AUTH0_DOMAIN` (sans `https://`) et `AUTH0_AUDIENCE` (identique à l'identifiant de l'API dans Auth0). Décoder le jeton sur jwt.io. |
-| 403 « Aucune boutique associée à ce jeton » | Le jeton ne contient pas le claim `boutique_id` : vérifier l'Action Auth0 ou la variable `AUTH0_CLIENT_BOUTIQUES`. |
+| 401 sur toutes les requêtes | Jeton absent, expiré ou d'un autre fournisseur : en mode Auth0, vérifier `AUTH0_DOMAIN` (sans `https://`) et `AUTH0_AUDIENCE` ; en mode dev, prendre un jeton avec `scripts/jeton.sh`. Décoder le jeton sur jwt.io. |
+| 403 renvoyé par la passerelle | Le jeton n'a pas la permission de la route (`scope`) : voir `infra/krakend/settings/routes.json`. |
+| 429 « Too Many Requests » | Plus de 300 requêtes par minute depuis la même adresse IP (`qos/ratelimit/router` dans `infra/krakend/krakend.tmpl`). |
+| 403 « Aucune boutique associée à ce jeton » | Le jeton ne contient pas le claim `boutique_id` : vérifier que l'Action Terraform est déployée et que l'application a `client_metadata.boutique_id`. |
 | Port déjà utilisé | Modifier la partie gauche de `ports:` dans `docker-compose.yml`. |
 | Un service redémarre en boucle avec `PRECONDITION_FAILED` (`x-dead-letter-exchange`) | Les files RabbitMQ ont été créées par une version précédente avec d'autres paramètres. Repartir de zéro (ligne suivante) ou supprimer les files concernées dans la console RabbitMQ. |
 | Repartir de zéro | `docker compose down -v && docker compose up -d --build` |
@@ -299,16 +327,16 @@ Chaque service lit sa configuration dans des variables d'environnement, avec des
 Chaque *push* sur `main` (ou un lancement manuel dans l'onglet *Actions*) exécute `.github/workflows/deploy.yml` :
 
 1. la CI (tests unitaires et test de bout en bout) ;
-2. la construction des 8 images, poussées sur DockerHub sous `<DOCKERHUB_USERNAME>/surfwear-<service>`, avec les tags `latest` et le SHA du commit ;
-3. la copie de `docker-compose.prod.yml`, `infra/` et `scripts/deploy/deploy.sh` sur le VPS, puis l'exécution de ce script en SSH (`pull`, `up --wait`, contrôle de `/health`).
+2. la construction des 8 images (dont la passerelle KrakenD, construite depuis `infra/krakend`), poussées sur DockerHub sous `<DOCKERHUB_USERNAME>/surfwear-<service>`, avec les tags `latest` et le SHA du commit ;
+3. la copie de `docker-compose.prod.yml`, `infra/`, `docs/openapi.yaml` et `scripts/deploy/deploy.sh` sur le VPS, puis l'exécution de ce script en SSH (`pull`, `up --wait`, contrôle de la passerelle).
 
 **Secrets GitHub** (*Settings > Secrets and variables > Actions*) : `DOCKERHUB_USERNAME`, `DOCKERHUB_PASSWORD` (jeton d'accès DockerHub), `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` (clé privée dont la clé publique est dans `~/.ssh/authorized_keys` du VPS), `VPS_SSH_PORT`. Variable facultative : `VPS_DEPLOY_PATH` (par défaut `~/surfwear`).
 
 **Prérequis sur le VPS** : Docker et Docker Compose v2, et l'utilisateur `VPS_USER` membre du groupe `docker`. Les dépôts DockerHub créés au premier *push* sont publics ; s'ils sont privés, faire une fois `docker login` sur le VPS.
 
-**Configuration** : le fichier `~/surfwear/.env` du VPS n'est jamais écrasé. Au premier déploiement, il est créé avec des mots de passe aléatoires et `AUTH_MODE=dev`. Pour la vraie production, y passer `AUTH_MODE=auth0` et renseigner les variables `AUTH0_*` (section 5), puis relancer le workflow.
+**Configuration** : le fichier `~/surfwear/.env` du VPS n'est jamais écrasé. Au premier déploiement, il est créé avec des mots de passe aléatoires et `AUTH_MODE=dev`. Pour la vraie production, y passer `AUTH_MODE=auth0` et renseigner les variables `AUTH0_*` produites par Terraform (section 5), puis relancer le workflow.
 
-**Exposition** : les conteneurs n'écoutent que sur `127.0.0.1` (passerelle `8201`, ERP `8202`, boutiques `7001` à `7003`, mailpit `8025`, console RabbitMQ `15672`). Le nginx de l'hôte fait le reverse proxy en HTTPS, par exemple :
+**Exposition** : les conteneurs n'écoutent que sur `127.0.0.1` (passerelle `8201`, ERP `8202`, Swagger UI `8203`, boutiques `7001` à `7003`, mailpit `8025`, console RabbitMQ `15672`). Le nginx de l'hôte fait le reverse proxy en HTTPS, par exemple :
 
 ```nginx
 location / {

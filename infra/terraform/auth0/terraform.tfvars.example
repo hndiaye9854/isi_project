@@ -1,0 +1,4 @@
+# Copier en terraform.tfvars (ignoré par Git) et compléter.
+auth0_domain            = "dev-xxxxxxxx.us.auth0.com"
+terraform_client_id     = "Client ID de l'application « Terraform »"
+terraform_client_secret = "Secret de l'application « Terraform »"

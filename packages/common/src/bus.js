@@ -1,6 +1,7 @@
 import amqp from 'amqplib';
 import { cloudEvent } from './events.js';
 import { sleep } from './config.js';
+import { initTraces, tracer } from './traces.js';
 
 const EXCHANGE = 'surfwear.events';
 const MAX_RETRIES = 3;
@@ -10,6 +11,7 @@ const MAX_RETRIES = 3;
  * En cas de perte de connexion, le processus s'arrête : l'orchestrateur le redémarre.
  */
 export async function connectBus({ url, service, logger, attempts = 30 }) {
+  initTraces({ service, logger, url });
   let conn;
   for (let i = 1; i <= attempts; i++) {
     try {
@@ -37,6 +39,7 @@ export async function connectBus({ url, service, logger, attempts = 30 }) {
       messageId: evt.id,
     });
     await ch.waitForConfirms();
+    tracer({ type: 'evenement', de: service, vers: 'rabbitmq', evenement: type, id: evt.id });
     logger.info({ type, id: evt.id }, 'Événement publié');
     return evt;
   }
@@ -69,18 +72,25 @@ export async function connectBus({ url, service, logger, attempts = 30 }) {
     await ch.prefetch(10);
     await ch.consume(queue, async (msg) => {
       if (!msg) return;
+      const essai = msg.properties.headers?.['x-retries'] || 0;
+      let typeEvt = msg.fields.routingKey;
       try {
-        await handler(JSON.parse(msg.content.toString()));
+        const evt = JSON.parse(msg.content.toString());
+        typeEvt = evt.type || typeEvt;
+        tracer({ type: 'livraison', de: 'rabbitmq', vers: service, evenement: typeEvt, file: queue, essai, id: evt.id });
+        await handler(evt);
         ch.ack(msg);
         return;
       } catch (err) {
-        const retries = (msg.properties.headers?.['x-retries'] || 0) + 1;
+        const retries = essai + 1;
         if (retries > MAX_RETRIES) {
+          tracer({ type: 'dlq', de: service, vers: 'rabbitmq', evenement: typeEvt, file: `${queue}.dlq`, erreur: err.message });
           logger.error({ err: err.message, queue }, 'Échec définitif, message envoyé en file d\'erreurs (DLQ)');
           ch.nack(msg, false, false);
           return;
         }
         logger.warn({ err: err.message, queue, retries }, 'Traitement en échec, nouvel essai');
+        tracer({ type: 'retry', de: service, vers: 'rabbitmq', evenement: typeEvt, file: `${queue}.retry.${retries}`, essai: retries, delai: 2 ** retries, erreur: err.message });
         try {
           // La copie est confirmée par le broker AVANT d'acquitter l'original : le message n'est jamais perdu.
           await versFile(`${queue}.retry.${retries}`, msg.content, {

@@ -2,7 +2,7 @@
 # Démonstration commentée du prototype (à lancer après docker compose up -d).
 set -euo pipefail
 GW=http://localhost:8080; ERP=http://localhost:8090
-TOKEN_B1=${TOKEN_B1:-dev-B001}
+TOKEN_B1=${TOKEN_B1:-$(bash "$(dirname "$0")/jeton.sh" B001 --imprimer)}
 pause() { echo; read -rp "Appuyez sur Entrée pour continuer..." _; echo; }
 titre() { echo; echo "=== $1 ==="; }
 
@@ -34,4 +34,4 @@ echo "-> Plus de ressaisie : le stock local est mis à jour automatiquement. Mai
 pause
 
 titre "5. Le commercial consulte les références en tension pour anticiper la production"
-curl -s -H "Authorization: Bearer ${TOKEN_COMMERCIAL:-dev-commercial}" "$GW/api/v1/stats/tensions" | jq
+curl -s -H "Authorization: Bearer ${TOKEN_COMMERCIAL:-$(bash "$(dirname "$0")/jeton.sh" COMMERCIAL --imprimer)}" "$GW/api/v1/stats/tensions" | jq
