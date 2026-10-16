@@ -15,4 +15,7 @@ provider "auth0" {
   domain        = var.auth0_domain
   client_id     = var.terraform_client_id
   client_secret = var.terraform_client_secret
+  # Explicite : sinon le provider lit AUTH0_AUDIENCE dans l'environnement, qui désigne notre API (via le .env)
+  # et non la Management API d'Auth0.
+  audience = "https://${var.auth0_domain}/api/v2/"
 }

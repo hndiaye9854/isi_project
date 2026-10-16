@@ -19,9 +19,17 @@ echo "Audience recherchée : $AUDIENCE"
 # Correspondance Client ID -> boutique, telle qu'elle était configurée à la main dans le .env du projet.
 CORRESPONDANCE=$(sed -n 's/^AUTH0_CLIENT_BOUTIQUES=//p' ../../../.env 2>/dev/null || true)
 
-JETON=$(curl -fsS -X POST "https://$DOMAINE/oauth/token" -H 'Content-Type: application/json' \
+REPONSE=$(curl -sS -X POST "https://$DOMAINE/oauth/token" -H 'Content-Type: application/json' \
   -d "$(jq -n --arg id "$CLIENT_ID" --arg s "$CLIENT_SECRET" --arg a "https://$DOMAINE/api/v2/" \
-        '{grant_type: "client_credentials", client_id: $id, client_secret: $s, audience: $a}')" | jq -r .access_token)
+        '{grant_type: "client_credentials", client_id: $id, client_secret: $s, audience: $a}')")
+JETON=$(jq -r '.access_token // empty' <<< "$REPONSE" 2>/dev/null || true)
+if [ -z "$JETON" ]; then
+  echo "Auth0 refuse le jeton de l'application Terraform (Client ID $CLIENT_ID, secret de ${#CLIENT_SECRET} caractères) :"
+  echo "  $(jq -r '"\(.error) : \(.error_description)"' <<< "$REPONSE" 2>/dev/null || echo "$REPONSE")"
+  echo "« Unauthorized » : Client ID et secret ne correspondent pas (recopier depuis Applications > Terraform > Settings)."
+  echo "« Client is not authorized » : autoriser l'application sur « Auth0 Management API » (onglet APIs)."
+  exit 1
+fi
 api() { curl -fsS -G "https://$DOMAINE/api/v2/$1" -H "Authorization: Bearer $JETON" "${@:2}"; }
 
 API_ID=$(api resource-servers | jq -r --arg a "$AUDIENCE" '.[] | select(.identifier == $a) | .id')
