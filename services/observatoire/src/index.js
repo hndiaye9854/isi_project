@@ -123,6 +123,44 @@ app.post('/actions/receptionner', route(async (_req, res) => {
   res.json({ lot, stock: await fetchJson(`${ERP}/production/${lot.id}/reception`, { method: 'POST', de: 'logisticien' }) });
 }));
 
+// Un assistant IA utilise le serveur MCP (via la passerelle) : il prépare la commande, puis la passe.
+// Jeton de démonstration du faux fournisseur (mode dev uniquement), audience MCP.
+const PASSERELLE = env('GATEWAY_URL', 'http://gateway:8080');
+const FOURNISSEUR_DEV = env('OAUTH_DEV_TOKEN_URL', 'http://mock-oauth2:8080/surfwear/token');
+
+async function appelMcp(jetonMcp, id, nom, args) {
+  const res = await fetch(`${PASSERELLE}/mcp`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${jetonMcp}`, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream',
+      'MCP-Protocol-Version': '2025-11-25', 'X-Appelant': 'assistant-ia',
+    },
+    body: JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: nom, arguments: args } }),
+    signal: AbortSignal.timeout(15000),
+  });
+  const brut = await res.text();
+  const message = JSON.parse(brut.split('\n').find((l) => l.startsWith('data: '))?.slice(6) || brut);
+  if (message.error) throw new HttpError(502, message.error.message);
+  const texte = message.result.content[0].text;
+  if (message.result.isError) throw new HttpError(409, texte);
+  return JSON.parse(texte);
+}
+
+app.post('/actions/assistant-ia', route(async (req, res) => {
+  if (env('AUTH_MODE', 'dev') !== 'dev') throw new HttpError(409, 'Démonstration disponible en mode dev (jetons du faux fournisseur)');
+  const { gtin, quantite = 2 } = req.body || {};
+  if (!gtin) throw new HttpError(400, 'gtin obligatoire');
+  const reponse = await fetch(FOURNISSEUR_DEV, {
+    method: 'POST',
+    body: new URLSearchParams({ grant_type: 'client_credentials', client_id: 'boutique-b001', client_secret: 'dev', audience: 'https://mcp.surfwear.example' }),
+  });
+  const { access_token: jetonMcp } = await reponse.json();
+  const lignes = [{ gtin, quantite: Number(quantite) }];
+  const simulation = await appelMcp(jetonMcp, 1, 'preparer_commande', { lignes });
+  const commande = await appelMcp(jetonMcp, 2, 'passer_commande', { lignes, reference_boutique: 'assistant-ia' });
+  res.json({ simulation, commande });
+}));
+
 // Message volontairement invalide : montre les nouvelles tentatives (2, 4, 8 s) puis la file d'erreurs.
 app.post('/actions/message-empoisonne', route(async (_req, res) => {
   if (!canal) throw new HttpError(503, 'RabbitMQ indisponible');

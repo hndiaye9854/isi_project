@@ -33,6 +33,7 @@ x-auth-env: &auth-env
   AUTH_MODE: ${AUTH_MODE:-auth0}
   AUTH0_DOMAIN: ${AUTH0_DOMAIN:-}
   AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:-}
+  MCP_AUDIENCE: ${MCP_AUDIENCE:-https://mcp.surfwear.example}
 
 services:
   # ---------------- Infrastructure ----------------
@@ -158,6 +159,21 @@ services:
       ANALYTICS_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/analytics
     healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8084/health"], interval: 10s, timeout: 3s, retries: 10 }
 
+  # Serveur MCP (assistants IA), derrière la passerelle : https://<domaine>/mcp
+  mcp:
+    <<: *node-service
+    image: ${DOCKERHUB_NAMESPACE}/surfwear-mcp:${IMAGE_TAG:-latest}
+    environment:
+      <<: [*common-env, *auth-env]
+      PORT: 8086
+      MCP_RESOURCE: ${MCP_RESOURCE:-https://isi.hamidnd.me/mcp}
+    depends_on:
+      <<: *infra-ready
+      catalogue: { condition: service_healthy }
+      commandes: { condition: service_healthy }
+      analytics: { condition: service_healthy }
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8086/health"], interval: 10s, timeout: 3s, retries: 10 }
+
   # Passerelle d'API : KrakenD CE (image construite depuis infra/krakend par le pipeline).
   gateway:
     restart: unless-stopped
@@ -170,6 +186,7 @@ services:
       commandes: { condition: service_healthy }
       notifications: { condition: service_healthy }
       analytics: { condition: service_healthy }
+      mcp: { condition: service_healthy }
       mock-oauth2: { condition: service_started }
     ports: ["127.0.0.1:${GATEWAY_PORT:-8201}:8080"]   # API publique (derrière nginx)
     healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8080/__health"], interval: 10s, timeout: 3s, retries: 10 }

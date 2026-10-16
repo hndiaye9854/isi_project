@@ -1,0 +1,14 @@
+{
+  "name": "@surfwear/mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Serveur MCP : les assistants IA consultent la disponibilité et préparent les commandes (derrière la passerelle KrakenD)",
+  "main": "src/index.js",
+  "dependencies": {
+    "@surfwear/common": "*",
+    "@modelcontextprotocol/node": "^2.1.1",
+    "@modelcontextprotocol/server": "^2.3.1",
+    "zod": "^4.2.0"
+  }
+}

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Obtient un jeton d'accès (flux OAuth2 client credentials) pour tester l'API, par exemple dans Swagger.
-# Usage : bash scripts/jeton.sh [B001|B002|B003|COMMERCIAL] [--imprimer]
+# Usage : bash scripts/jeton.sh [B001|B002|B003|COMMERCIAL] [--imprimer] [--mcp]
+#   - --mcp : jeton pour le serveur MCP (audience MCP_AUDIENCE) au lieu de l'API REST ;
 #   - par défaut, le jeton est copié dans le presse-papiers ; --imprimer l'affiche (pour les scripts) ;
 #   - AUTH_MODE=dev (défaut) : faux fournisseur mock-oauth2 sur http://localhost:8099, aucun secret ;
 #   - AUTH_MODE=auth0 : identifiants AUTH0_<QUI>_CLIENT_ID et AUTH0_<QUI>_CLIENT_SECRET du .env (jamais affichés).
@@ -12,8 +13,12 @@ if [ -f .env ]; then set -a; source .env; set +a; fi
 AUTH_MODE=${MODE_IMPOSE:-${AUTH_MODE:-dev}}
 
 QUI=$(printf %s "${1:-B001}" | tr '[:lower:]' '[:upper:]')
-IMPRIMER=false
-for arg in "$@"; do [ "$arg" = "--imprimer" ] && IMPRIMER=true; done
+IMPRIMER=false; MCP=false
+for arg in "$@"; do
+  [ "$arg" = "--imprimer" ] && IMPRIMER=true
+  [ "$arg" = "--mcp" ] && MCP=true
+done
+if $MCP; then AUDIENCE=${MCP_AUDIENCE:-https://mcp.surfwear.example}; else AUDIENCE=${AUTH0_AUDIENCE:-https://api.surfwear.example}; fi
 
 if [ "$AUTH_MODE" = "auth0" ]; then
   URL="https://${AUTH0_DOMAIN:?AUTH0_DOMAIN absent du .env}/oauth/token"
@@ -30,7 +35,7 @@ REPONSE=$(curl -s -X POST "$URL" \
   --data-urlencode grant_type=client_credentials \
   --data-urlencode "client_id=$ID" \
   --data-urlencode "client_secret=$SECRET" \
-  --data-urlencode "audience=${AUTH0_AUDIENCE:-https://api.surfwear.example}")
+  --data-urlencode "audience=$AUDIENCE")
 JETON=$(echo "$REPONSE" | jq -r '.access_token // empty' 2>/dev/null || true)
 if [ -z "$JETON" ]; then
   echo "Jeton refusé ($AUTH_MODE) : $(echo "$REPONSE" | jq -r '.error_description // .error // .' 2>/dev/null || echo "$REPONSE")" >&2
