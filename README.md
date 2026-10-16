@@ -326,7 +326,7 @@ Chaque service lit sa configuration dans des variables d'environnement, avec des
 
 ## 12. Déploiement sur le VPS
 
-En production : API et documentation sur **https://isi.hamidnd.me** (`/docs`), écran du logisticien sur **https://isi-erp.hamidnd.me/logistique/**.
+En production : API et documentation sur **https://isi.hamidnd.me** (`/docs`), serveur MCP sur **https://mcp.hamidnd.me/mcp**, écran du logisticien sur **https://isi-erp.hamidnd.me/logistique/**.
 
 Chaque *push* sur `main` (ou un lancement manuel dans l'onglet *Actions*) exécute `.github/workflows/deploy.yml` :
 
@@ -334,7 +334,7 @@ Chaque *push* sur `main` (ou un lancement manuel dans l'onglet *Actions*) exécu
 2. la construction des 8 images (dont la passerelle KrakenD, construite depuis `infra/krakend`), poussées sur DockerHub sous `<DOCKERHUB_USERNAME>/surfwear-<service>`, avec les tags `latest` et le SHA du commit ;
 3. la génération du `.env` de production à partir des secrets GitHub, puis sa copie sur le VPS (droits 600) avec `docker-compose.prod.yml`, `infra/`, `docs/openapi.yaml` et `scripts/deploy/deploy.sh` ;
 4. l'exécution de ce script en SSH : `pull`, alignement des mots de passe Postgres et RabbitMQ, `up --wait`, contrôle de la passerelle (`/__health`) ;
-5. un contrôle via les domaines publics : santé de l'API et de l'ERP et, en mode `auth0`, refus des jetons invalides.
+5. un contrôle via les domaines publics : santé de l'API et de l'ERP, documentation `/docs`, découverte OAuth du MCP, `/mcp` refusé sans jeton et, en mode `auth0`, refus des jetons invalides.
 
 **Secrets GitHub** (*Settings > Secrets and variables > Actions*) :
 
@@ -345,7 +345,9 @@ Chaque *push* sur `main` (ou un lancement manuel dans l'onglet *Actions*) exécu
 | Infrastructure | `POSTGRES_PASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD` (lettres, chiffres et `. _ ~ -` uniquement : ils sont insérés dans des URL) |
 | Auth0 | `AUTH_MODE` (`auth0`), `AUTH0_DOMAIN` (sans `https://`), `AUTH0_AUDIENCE`, `AUTH0_CLAIM_NAMESPACE`, `AUTH0_CLIENT_BOUTIQUES`, `AUTH0_B001_CLIENT_ID` / `_CLIENT_SECRET` (idem B002, B003) |
 
-Variables facultatives : `VPS_DEPLOY_PATH` (par défaut `~/surfwear`), `PUBLIC_API_URL` et `PUBLIC_ERP_URL` (par défaut les domaines ci-dessus).
+Variables facultatives : `VPS_DEPLOY_PATH` (par défaut `~/surfwear`), `PUBLIC_API_URL` et `PUBLIC_ERP_URL` (par défaut les domaines ci-dessus), `PUBLIC_MCP_URL` (par défaut `https://mcp.hamidnd.me`), `MCP_AUDIENCE` (par défaut `https://mcp.surfwear.isi`, la même valeur que `mcp_audience` dans Terraform).
+
+**Auth0** : avant le premier déploiement du MCP, `terraform apply` dans `infra/terraform/auth0` crée l'API « MCP Surfwear B2B » et autorise les boutiques et le commercial à obtenir un jeton pour elle (`mcp.tf`).
 
 **Prérequis sur le VPS** : Docker et Docker Compose v2, et l'utilisateur `VPS_USER` membre du groupe `docker`. Les dépôts DockerHub créés au premier *push* sont publics ; s'ils sont privés, faire une fois `docker login` sur le VPS.
 
@@ -365,6 +367,17 @@ location /docs {                       # Swagger UI (conteneur swagger-ui, BASE_
     proxy_set_header Host $host;
     proxy_hide_header Cache-Control;   # le contrat OpenAPI change : jamais mis en cache (Cloudflare, navigateur)
     add_header Cache-Control "no-store" always;
+}
+```
+
+Le serveur MCP a son propre domaine, `mcp.hamidnd.me`, qui pointe lui aussi vers KrakenD : seules la route `/mcp` et la découverte OAuth y sont publiées.
+
+```nginx
+server {
+    server_name mcp.hamidnd.me;
+    location = /mcp                              { proxy_pass http://127.0.0.1:8201; include proxy_params; proxy_buffering off; proxy_read_timeout 300s; }
+    location /.well-known/oauth-protected-resource { proxy_pass http://127.0.0.1:8201; include proxy_params; }
+    location / { return 404; }
 }
 ```
 

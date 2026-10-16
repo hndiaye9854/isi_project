@@ -33,7 +33,7 @@ x-auth-env: &auth-env
   AUTH_MODE: ${AUTH_MODE:-auth0}
   AUTH0_DOMAIN: ${AUTH0_DOMAIN:-}
   AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:-}
-  MCP_AUDIENCE: ${MCP_AUDIENCE:-https://mcp.surfwear.example}
+  MCP_AUDIENCE: ${MCP_AUDIENCE:-https://mcp.surfwear.isi}
 
 services:
   # ---------------- Infrastructure ----------------
@@ -159,14 +159,14 @@ services:
       ANALYTICS_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/analytics
     healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8084/health"], interval: 10s, timeout: 3s, retries: 10 }
 
-  # Serveur MCP (assistants IA), derrière la passerelle : https://<domaine>/mcp
+  # Serveur MCP (assistants IA), derrière la passerelle : https://mcp.hamidnd.me/mcp (nginx → KrakenD)
   mcp:
     <<: *node-service
     image: ${DOCKERHUB_NAMESPACE}/surfwear-mcp:${IMAGE_TAG:-latest}
     environment:
       <<: [*common-env, *auth-env]
       PORT: 8086
-      MCP_RESOURCE: ${MCP_RESOURCE:-https://isi.hamidnd.me/mcp}
+      MCP_RESOURCE: ${MCP_RESOURCE:-https://mcp.hamidnd.me/mcp}   # adresse publique annoncée aux clients MCP
     depends_on:
       <<: *infra-ready
       catalogue: { condition: service_healthy }
